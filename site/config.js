@@ -1,7 +1,7 @@
 // Shared settings for the storefront and admin pages
 window.SITE = {
-    name: 'The Haul',
-    tagline: 'Hand-picked AliExpress finds, checked and sorted so you don\'t have to dig.',
+    name: 'AliDealer',
+    tagline: 'Hand-picked AliExpress deals, checked and sorted so you don\'t have to dig.',
     api: 'https://ghzfcfbdwidurfqkjaateras4m0hnndz.lambda-url.eu-central-1.on.aws/',
 };
 
