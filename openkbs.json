@@ -9,5 +9,5 @@
     { "name": "api", "runtime": "nodejs24.x", "memory": 512, "timeout": 60 }
   ],
   "site": "./site",
-  "redirects": { "canonicalHost": "apex" }
+  "redirects": { "canonicalHost": "apex", "cleanUrls": true }
 }
