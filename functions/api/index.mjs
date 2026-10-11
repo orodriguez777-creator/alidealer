@@ -124,21 +124,27 @@ function decodeEntities(s) {
     return s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 }
 
-const cleanTitle = (t) => String(t || '').replace(/\s*-\s*AliExpress.*$/i, '').trim();
+const cleanTitle = (t) => String(t || '').replace(/\s*(-|на)\s*AliExpress.*$/i, '').trim();
 const isProductImage = (u) => /^https:\/\/[a-z0-9.-]*(alicdn\.com|aliexpress-media\.com)\//i.test(u || '');
 
-// Fast path: AliExpress serves Open Graph tags to link-preview crawlers,
-// but often answers cloud IPs with a bot check instead.
-async function fetchOpenGraph(itemId) {
+// AliExpress serves Open Graph tags to link-preview crawlers, but answers cloud
+// IPs with a bot check on and off. The global site blocks almost every time;
+// aliexpress.ru usually serves the real page (Russian title, photo) in ~2s.
+async function fetchOpenGraph(itemId, host = 'www.aliexpress.com') {
     try {
-        const res = await fetch(`https://www.aliexpress.com/item/${itemId}.html`, {
-            headers: { 'User-Agent': PREVIEW_UA, 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'aep_usuc_f=site=glo&c_tp=USD&region=US&b_locale=en_US' },
+        const res = await fetch(`https://${host}/item/${itemId}.html`, {
+            headers: {
+                'User-Agent': PREVIEW_UA,
+                'Accept-Language': 'en-US,en;q=0.9',
+                // the global-site cookie makes aliexpress.ru redirect into the bot check
+                ...(host === 'www.aliexpress.com' && { Cookie: 'aep_usuc_f=site=glo&c_tp=USD&region=US&b_locale=en_US' }),
+            },
             signal: AbortSignal.timeout(6000),
         });
         const html = await res.text();
         return { rawTitle: cleanTitle(metaContent(html, 'og:title')), image: metaContent(html, 'og:image') };
     } catch (e) {
-        console.error('[og]', e.message);
+        console.error(`[og ${host}]`, e.message);
         return { rawTitle: '', image: '' };
     }
 }
@@ -200,17 +206,6 @@ async function fetchViaReader(itemId) {
     }
 }
 
-async function firstWorkingImage(candidates) {
-    for (const url of candidates) {
-        if (!isProductImage(url)) continue;
-        try {
-            const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000) });
-            if (res.ok && (res.headers.get('content-type') || '').startsWith('image/')) return url;
-        } catch { /* try next */ }
-    }
-    return '';
-}
-
 async function gemini(model, prompt, extra = {}, timeoutMs = 15000) {
     const res = await fetch(`https://proxy.openkbs.com/v1/google/models/${model}:generateContent`, {
         method: 'POST',
@@ -224,7 +219,7 @@ async function gemini(model, prompt, extra = {}, timeoutMs = 15000) {
     return m ? JSON.parse(m[0]) : {};
 }
 
-const OUTPUT_RULES = `- "title": a clean, readable product name (max 70 chars, no keyword stuffing, Title Case)
+const OUTPUT_RULES = `- "title": a clean, readable product name in English, translated if the listing is in another language (max 70 chars, no keyword stuffing, Title Case)
 - "category": exactly one of: ${CATEGORIES.join(' | ')}`;
 
 function normalize(out, fallbackTitle) {
@@ -243,21 +238,31 @@ ${OUTPUT_RULES}`, { generationConfig: { maxOutputTokens: 300, responseMimeType: 
     return normalize(out, rawTitle);
 }
 
-// The bot check on cloud IPs is intermittent, so keep retrying the direct read
-// while the reader service works in parallel. (AI "URL reading" was tried and
-// dropped: it returns confident titles of unrelated products.)
+// Ask every source at once and take the first that returns a title. The global
+// site's bot check is intermittent, so keep retrying it until something wins.
+// (AI "URL reading" was tried and dropped: it returns confident titles of
+// unrelated products.)
 async function readPage(itemId, deadline) {
     let done = false;
-    const reader = fetchViaReader(itemId).then(r => { if (r.rawTitle) done = true; return r; });
-    let og = { rawTitle: '', image: '' };
-    while (!done && Date.now() < deadline) {
-        og = await fetchOpenGraph(itemId);
-        if (og.rawTitle) break;
-        await new Promise(r => setTimeout(r, 1500));
+    const retryGlobal = async () => {
+        while (!done && Date.now() < deadline) {
+            const og = await fetchOpenGraph(itemId);
+            if (og.rawTitle) return og;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        return { rawTitle: '', image: '' };
+    };
+    const sources = [retryGlobal(), fetchOpenGraph(itemId, 'aliexpress.ru'), fetchViaReader(itemId)];
+    const titled = sources.map(p => p.then(r => r.rawTitle ? r : Promise.reject(r)));
+    const timeout = new Promise((_, reject) => setTimeout(reject, Math.max(0, deadline - Date.now())));
+    try {
+        const page = await Promise.race([Promise.any(titled), timeout]);
+        done = true;
+        return { rawTitle: page.rawTitle, image: isProductImage(page.image) ? page.image : '' };
+    } catch {
+        done = true;
+        return { rawTitle: '', image: '' };
     }
-    if (og.rawTitle && og.image) return og;
-    const r = await reader;
-    return { rawTitle: og.rawTitle || r.rawTitle, image: await firstWorkingImage([og.image, r.image]) };
 }
 
 async function handleDetect({ url }) {
@@ -268,7 +273,7 @@ async function handleDetect({ url }) {
     if (!itemId) return json({ error: 'Could not find the product behind this link. Fill in the details manually.' }, 422);
 
     let page = await fetchViaAffiliateApi(itemId);
-    if (!page?.rawTitle) page = await readPage(itemId, Date.now() + 30000);
+    if (!page?.rawTitle) page = await readPage(itemId, Date.now() + 8000);
     if (!page.rawTitle) {
         return json({ itemId, image: page.image, title: '', category: '', warning: 'AliExpress didn\'t let us read this page right now. Paste the product title below and press Auto-categorize, or try Detect again.' });
     }
