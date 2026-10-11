@@ -9,6 +9,7 @@
     function show(section) {
         $('login').classList.toggle('hidden', section !== 'login');
         $('app').classList.toggle('hidden', section !== 'app');
+        $('actions').classList.toggle('hidden', section !== 'app');
     }
 
     function note(el, text, kind = 'err') {

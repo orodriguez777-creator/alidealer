@@ -5,12 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
     <title>Admin — AliDealer</title>
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/favicon.png" type="image/png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@400;600;700&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+    <header class="hero hero-small">
+        <div class="wrap hero-inner">
+            <a class="logo" href="/" target="_blank" aria-label="View AliDealer">
+                <img class="logo-cart" src="/cart.png" alt="" width="209" height="160">
+                <span class="logo-text">
+                    <span class="brand">AliDealer</span>
+                    <span class="slogan">Admin · add a find</span>
+                </span>
+            </a>
+            <div class="masthead-meta hidden" id="actions">
+                <a href="/" target="_blank" class="btn ghost small">View site</a>
+                <button class="btn ghost small" id="logout">Sign out</button>
+            </div>
+        </div>
+    </header>
+
     <div class="wrap">
         <!-- login -->
         <section id="login" class="login hidden">
@@ -29,14 +47,6 @@
 
         <!-- dashboard -->
         <section id="app" class="hidden">
-            <header class="masthead" style="padding-top:36px">
-                <h1 class="brand" style="font-size:clamp(40px,6vw,72px)">Add a <em>find</em></h1>
-                <div class="masthead-meta">
-                    <a href="/" target="_blank" class="btn ghost small">View site</a>
-                    <button class="btn ghost small" id="logout">Sign out</button>
-                </div>
-            </header>
-
             <div class="admin-layout">
                 <div class="panel">
                     <div id="msg" class="note hidden"></div>

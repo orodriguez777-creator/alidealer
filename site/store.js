@@ -2,9 +2,7 @@
     const $ = (id) => document.getElementById(id);
     const state = { products: [], category: 'All', q: '' };
 
-    // Accent the last word, or the last CamelCase part of a one-word name (AliDealer → Ali·Dealer)
-    const m = SITE.name.match(/^(.*\s)(\S+)$/) || SITE.name.match(/^(.*[a-z])([A-Z]\w*)$/);
-    $('brand').innerHTML = m ? `${esc(m[1])}<em>${esc(m[2])}</em>` : esc(SITE.name);
+    $('brand').textContent = SITE.name;
     $('tagline').textContent = SITE.tagline;
     $('copy').textContent = `© ${new Date().getFullYear()} ${SITE.name}`;
 
