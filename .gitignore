@@ -1,0 +1,21 @@
+node_modules/
+.*
+!.gitignore
+openkbs.local.json
+
+# openkbs: skills and AI instructions travel with the repo
+# (the openkbs skill itself is managed by the CLI and stays out)
+!.claude/
+.claude/*
+!.claude/CLAUDE.md
+!.claude/skills/
+!.claude/skills-off/
+!.claude/skills/.removed-*
+!.claude/active-skills.json
+.claude/skills/openkbs/
+
+# openkbs: catalog skills (npx skills add) keep their folder here, linked from .claude/skills
+!.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills-off/
