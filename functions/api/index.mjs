@@ -1,63 +1,301 @@
 /**
- * API Function
+ * Affiliate catalog API
  *
- * Endpoint: https://yourdomain.com/api
+ * Public:  list
+ * Admin:   login, detect, save, delete  (require ADMIN_PASSWORD-derived token)
+ *
+ * Products are stored as one JSON document in the project bucket
+ * (data/products.json) — a single admin writes, everyone reads.
  *
  * Environment variables:
- * - DATABASE_URL (Postgres connection string)
- * - STORAGE_BUCKET (S3 bucket name)
- * - OPENKBS_PROJECT_ID (your project short ID)
+ * - ADMIN_PASSWORD  (secret, set via functions/api/.env)
+ * - STORAGE_BUCKET, OPENKBS_API_KEY (injected)
  */
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 
-export const handler = async (event) => {
-    const headers = {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type'
+const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-central-1' });
+const DATA_KEY = 'data/products.json';
+const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
+const AI_MODEL = 'gemini-3.1-flash-lite-preview';
+const URL_MODEL = 'gemini-3-flash-preview';
+
+export const CATEGORIES = [
+    'Electronics', 'Phone Accessories', 'Computers & Office', 'Home & Kitchen',
+    'Tools & Home Improvement', 'Lighting', 'Women\'s Fashion', 'Men\'s Fashion',
+    'Shoes', 'Bags & Luggage', 'Jewelry & Watches', 'Beauty & Health',
+    'Sports & Outdoors', 'Toys & Hobbies', 'Baby & Kids', 'Pet Supplies',
+    'Automotive', 'Garden', 'Other',
+];
+
+const CORS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+function json(data, statusCode = 200) {
+    return { statusCode, headers: { 'Content-Type': 'application/json', ...CORS }, body: JSON.stringify(data) };
+}
+
+// ---------- auth ----------
+
+function sign(payload) {
+    return createHmac('sha256', 'catalog-admin:' + process.env.ADMIN_PASSWORD).update(payload).digest('hex');
+}
+
+function issueToken() {
+    const exp = String(Date.now() + TOKEN_TTL_MS);
+    return `${exp}.${sign(exp)}`;
+}
+
+function isAdmin(event) {
+    if (!process.env.ADMIN_PASSWORD) return false;
+    const auth = event.headers?.authorization || event.headers?.Authorization || '';
+    const token = auth.replace(/^Bearer\s+/i, '');
+    const [exp, sig] = token.split('.');
+    if (!exp || !sig || Number(exp) < Date.now()) return false;
+    const expected = Buffer.from(sign(exp));
+    const given = Buffer.from(sig);
+    return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+function passwordMatches(input) {
+    const a = Buffer.from(sign(String(input || '')));
+    const b = Buffer.from(sign(process.env.ADMIN_PASSWORD));
+    return timingSafeEqual(a, b);
+}
+
+// ---------- storage ----------
+
+async function loadProducts() {
+    try {
+        const res = await s3.send(new GetObjectCommand({ Bucket: process.env.STORAGE_BUCKET, Key: DATA_KEY }));
+        return JSON.parse(await res.Body.transformToString());
+    } catch (e) {
+        if (e.name === 'NoSuchKey') return [];
+        throw e;
+    }
+}
+
+async function saveProducts(products) {
+    await s3.send(new PutObjectCommand({
+        Bucket: process.env.STORAGE_BUCKET,
+        Key: DATA_KEY,
+        Body: JSON.stringify(products),
+        ContentType: 'application/json',
+    }));
+}
+
+// ---------- detection ----------
+
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128 Safari/537.36';
+// AliExpress serves server-rendered Open Graph tags to link-preview crawlers
+const PREVIEW_UA = 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)';
+
+function findItemId(text) {
+    const decoded = decodeURIComponent(decodeURIComponent(text));
+    const m = decoded.match(/\/item\/(?:[^/?#]*\/)?(\d{10,20})\.html/) || decoded.match(/productIds?=(\d{10,20})/);
+    return m ? m[1] : null;
+}
+
+// Follow affiliate redirects (s.click.aliexpress.com, a.aliexpress.com, ...) by hand
+// so we can spot the product id in any hop, including JS/meta-refresh pages.
+async function resolveItemId(url) {
+    let current = url;
+    for (let hop = 0; hop < 10; hop++) {
+        const id = findItemId(current);
+        if (id) return id;
+        const res = await fetch(current, { redirect: 'manual', headers: { 'User-Agent': BROWSER_UA }, signal: AbortSignal.timeout(8000) });
+        const location = res.headers.get('location');
+        if (location) { current = new URL(location, current).toString(); continue; }
+        const body = await res.text();
+        return findItemId(body);
+    }
+    return null;
+}
+
+function metaContent(html, prop) {
+    const re = new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']*)["']`, 'i');
+    const m = html.match(re);
+    return m ? decodeEntities(m[1]).trim() : '';
+}
+
+function decodeEntities(s) {
+    return s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+const cleanTitle = (t) => String(t || '').replace(/\s*-\s*AliExpress.*$/i, '').trim();
+const isProductImage = (u) => /^https:\/\/[a-z0-9.-]*(alicdn\.com|aliexpress-media\.com)\//i.test(u || '');
+
+// Fast path: AliExpress serves Open Graph tags to link-preview crawlers,
+// but often answers cloud IPs with a bot check instead.
+async function fetchOpenGraph(itemId) {
+    try {
+        const res = await fetch(`https://www.aliexpress.com/item/${itemId}.html`, {
+            headers: { 'User-Agent': PREVIEW_UA, 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'aep_usuc_f=site=glo&c_tp=USD&region=US&b_locale=en_US' },
+            signal: AbortSignal.timeout(6000),
+        });
+        const html = await res.text();
+        return { rawTitle: cleanTitle(metaContent(html, 'og:title')), image: metaContent(html, 'og:image') };
+    } catch (e) {
+        console.error('[og]', e.message);
+        return { rawTitle: '', image: '' };
+    }
+}
+
+// Last resort: public reader service
+async function fetchViaReader(itemId) {
+    try {
+        const res = await fetch(`https://r.jina.ai/https://www.aliexpress.com/item/${itemId}.html`, {
+            headers: { Accept: 'application/json', 'X-With-Images-Summary': 'true' },
+            signal: AbortSignal.timeout(25000),
+        });
+        const data = (await res.json()).data || {};
+        const rawTitle = /maintaining|captcha|404/i.test(data.title || '') ? '' : cleanTitle(data.title);
+        const image = Object.values(data.images || {}).find(u => isProductImage(u) && /\/kf\//.test(u)) || '';
+        return { rawTitle, image };
+    } catch (e) {
+        console.error('[reader]', e.message);
+        return { rawTitle: '', image: '' };
+    }
+}
+
+async function gemini(model, prompt, extra = {}, timeoutMs = 15000) {
+    const res = await fetch(`https://proxy.openkbs.com/v1/google/models/${model}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENKBS_API_KEY}` },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], ...extra }),
+        signal: AbortSignal.timeout(timeoutMs),
+    });
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+    const m = text.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : {};
+}
+
+const OUTPUT_RULES = `- "title": a clean, readable product name (max 70 chars, no keyword stuffing, Title Case)
+- "category": exactly one of: ${CATEGORIES.join(' | ')}`;
+
+function normalize(out, fallbackTitle) {
+    return {
+        title: String(out.title || fallbackTitle || '').slice(0, 120),
+        category: CATEGORIES.includes(out.category) ? out.category : 'Other',
     };
+}
 
-    if (event.requestContext?.http?.method === 'OPTIONS') {
-        return { statusCode: 200, headers, body: '' };
+async function classify(rawTitle) {
+    const out = await gemini(AI_MODEL, `You organise an AliExpress product catalog.
+Product listing title: "${rawTitle}"
+
+Return JSON with:
+${OUTPUT_RULES}`, { generationConfig: { maxOutputTokens: 300, responseMimeType: 'application/json' } });
+    return normalize(out, rawTitle);
+}
+
+// Google fetches the page itself (not blocked like cloud IPs) and classifies in one go
+async function readWithUrlContext(itemId) {
+    const out = await gemini(URL_MODEL, `Read https://www.aliexpress.com/item/${itemId}.html and reply with only JSON {"rawTitle": exact listing title or "", "image": og:image URL or ""}`, {
+        tools: [{ url_context: {} }],
+        generationConfig: { thinkingConfig: { thinkingLevel: 'low' } },
+    }, 30000);
+    const rawTitle = cleanTitle(out.rawTitle);
+    if (!rawTitle) return null;
+    return { rawTitle, image: isProductImage(out.image) ? out.image : '' };
+}
+
+async function handleDetect({ url }) {
+    if (!/^https?:\/\/([a-z0-9-]+\.)*aliexpress\.(com|us|ru)\b/i.test(url || '')) {
+        return json({ error: 'Please paste an AliExpress link (aliexpress.com, s.click.aliexpress.com, …)' }, 400);
+    }
+    const itemId = await resolveItemId(url);
+    if (!itemId) return json({ error: 'Could not find the product behind this link. Fill in the details manually.' }, 422);
+
+    let page = await fetchOpenGraph(itemId);
+    if (!page.rawTitle) {
+        // Run both slower paths together; prefer Google's read, take the image from whichever has one
+        const [ai, reader] = await Promise.all([
+            readWithUrlContext(itemId).catch(e => { console.error('[url_context]', e.message); return null; }),
+            fetchViaReader(itemId),
+        ]);
+        page = ai ? { ...ai, image: ai.image || reader.image } : reader;
+    }
+    if (!page.rawTitle) {
+        return json({ itemId, image: page.image, title: '', category: '', warning: 'Could not read the product page. Fill in the title and category manually.' });
     }
 
+    let detected = { title: page.rawTitle, category: 'Other' };
+    try { detected = await classify(page.rawTitle); } catch (e) { console.error('[classify]', e.message); }
+    return json({ itemId, image: page.image, rawTitle: page.rawTitle, ...detected });
+}
+
+// ---------- CRUD ----------
+
+async function handleSave(body) {
+    const url = String(body.url || '').trim();
+    const title = String(body.title || '').trim();
+    if (!/^https?:\/\//.test(url) || !title) return json({ error: 'Link and title are required' }, 400);
+
+    const products = await loadProducts();
+    const fields = {
+        url,
+        title: title.slice(0, 160),
+        category: String(body.category || 'Other').trim().slice(0, 60) || 'Other',
+        image: /^https:\/\//.test(body.image || '') ? body.image : '',
+        price: String(body.price || '').trim().slice(0, 30),
+        itemId: body.itemId ? String(body.itemId) : null,
+    };
+    let product;
+    if (body.id) {
+        product = products.find(p => p.id === body.id);
+        if (!product) return json({ error: 'Product not found' }, 404);
+        Object.assign(product, fields, { updatedAt: new Date().toISOString() });
+    } else {
+        product = { id: randomUUID(), ...fields, createdAt: new Date().toISOString() };
+        products.unshift(product);
+    }
+    await saveProducts(products);
+    return json({ product });
+}
+
+async function handleDelete({ id }) {
+    const products = await loadProducts();
+    const next = products.filter(p => p.id !== id);
+    await saveProducts(next);
+    return json({ deleted: products.length - next.length });
+}
+
+export const handler = async (event) => {
+    if (event.requestContext?.http?.method === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
+
     try {
-        const body = JSON.parse(event.body || '{}');
-        const { action } = body;
+        const raw = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : event.body;
+        const body = JSON.parse(raw || '{}');
 
-        switch (action) {
-            case 'hello':
-                return {
-                    statusCode: 200,
-                    headers,
-                    body: JSON.stringify({
-                        message: 'Hello from OpenKBS!',
-                        timestamp: new Date().toISOString()
-                    })
-                };
+        switch (body.action) {
+            case 'list':
+                return json({ products: await loadProducts(), categories: CATEGORIES });
 
-            case 'status':
-                return {
-                    statusCode: 200,
-                    headers,
-                    body: JSON.stringify({
-                        postgres: !!process.env.DATABASE_URL,
-                        storage: !!process.env.STORAGE_BUCKET,
-                        projectId: process.env.OPENKBS_PROJECT_ID
-                    })
-                };
+            case 'login':
+                if (!process.env.ADMIN_PASSWORD) return json({ error: 'Admin password is not configured yet' }, 503);
+                if (!passwordMatches(body.password)) {
+                    await new Promise(r => setTimeout(r, 1000)); // slow down guessing
+                    return json({ error: 'Wrong password' }, 401);
+                }
+                return json({ token: issueToken() });
+        }
 
-            default:
-                return {
-                    statusCode: 400,
-                    headers,
-                    body: JSON.stringify({ error: 'Unknown action', available: ['hello', 'status'] })
-                };
+        if (!isAdmin(event)) return json({ error: 'Unauthorized' }, 401);
+
+        switch (body.action) {
+            case 'check':  return json({ ok: true, categories: CATEGORIES });
+            case 'detect': return await handleDetect(body);
+            case 'save':   return await handleSave(body);
+            case 'delete': return await handleDelete(body);
+            default:       return json({ error: 'Unknown action' }, 400);
         }
     } catch (error) {
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ error: error.message })
-        };
+        console.error(error);
+        return json({ error: error.message }, 500);
     }
 };

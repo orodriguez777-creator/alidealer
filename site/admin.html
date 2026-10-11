@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Admin — The Haul</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="wrap">
+        <!-- login -->
+        <section id="login" class="login hidden">
+            <div class="panel">
+                <h2>Admin sign in</h2>
+                <div id="login-msg" class="note err hidden"></div>
+                <form id="login-form">
+                    <div class="field">
+                        <label for="password">Password</label>
+                        <input class="input" id="password" type="password" autocomplete="current-password" required autofocus>
+                    </div>
+                    <button class="btn" type="submit" id="login-btn">Sign in</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- dashboard -->
+        <section id="app" class="hidden">
+            <header class="masthead" style="padding-top:36px">
+                <h1 class="brand" style="font-size:clamp(40px,6vw,72px)">Add a <em>find</em></h1>
+                <div class="masthead-meta">
+                    <a href="/" target="_blank" class="btn ghost small">View site</a>
+                    <button class="btn ghost small" id="logout">Sign out</button>
+                </div>
+            </header>
+
+            <div class="admin-layout">
+                <div class="panel">
+                    <div id="msg" class="note hidden"></div>
+                    <form id="form" autocomplete="off">
+                        <input type="hidden" id="id">
+                        <input type="hidden" id="itemId">
+                        <div class="field">
+                            <label for="url">AliExpress affiliate link</label>
+                            <div class="row">
+                                <input class="input" id="url" type="url" placeholder="https://s.click.aliexpress.com/e/_..." required>
+                                <button class="btn accent" type="button" id="detect">Detect</button>
+                            </div>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="preview" id="preview"></div>
+                            <div>
+                                <div class="field">
+                                    <label for="title">Title</label>
+                                    <input class="input" id="title" required maxlength="160">
+                                </div>
+                                <div class="detected-raw hidden" id="raw"></div>
+                                <div class="field">
+                                    <label for="category">Category</label>
+                                    <input class="input" id="category" list="cats" required maxlength="60" placeholder="Pick or type a category">
+                                    <datalist id="cats"></datalist>
+                                </div>
+                                <div class="row">
+                                    <div class="field" style="flex:1">
+                                        <label for="price">Price (optional)</label>
+                                        <input class="input" id="price" placeholder="$12.99" maxlength="30">
+                                    </div>
+                                    <div class="field" style="flex:2">
+                                        <label for="image">Image URL</label>
+                                        <input class="input" id="image" type="url" placeholder="Auto-detected">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row" style="justify-content:flex-end;margin-top:8px">
+                            <button class="btn ghost" type="button" id="reset">Clear</button>
+                            <button class="btn" type="submit" id="save">Save find</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="panel">
+                    <h2>Listed finds <span id="total" style="color:var(--ink-soft);font-weight:600"></span></h2>
+                    <ul class="list" id="list"></ul>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="/config.js"></script>
+    <script src="/admin.js"></script>
+</body>
+</html>
