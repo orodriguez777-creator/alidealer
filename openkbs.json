@@ -8,5 +8,6 @@
   "functions": [
     { "name": "api", "runtime": "nodejs24.x", "memory": 512, "timeout": 60 }
   ],
-  "site": "./site"
+  "site": "./site",
+  "redirects": { "canonicalHost": "apex" }
 }
