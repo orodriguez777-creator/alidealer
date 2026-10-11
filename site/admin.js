@@ -85,6 +85,7 @@
             if (d.title) $('title').value = d.title;
             if (d.category) $('category').value = d.category;
             if (d.image) { $('image').value = d.image; setPreview(d.image); }
+            if (d.price && !$('price').value) $('price').value = d.price;
             if (d.rawTitle && d.rawTitle !== d.title) {
                 $('raw').textContent = `Original listing: ${d.rawTitle}`;
                 $('raw').classList.remove('hidden');
@@ -99,6 +100,26 @@
     }
 
     $('detect').addEventListener('click', detect);
+
+    $('classify').addEventListener('click', async () => {
+        const raw = $('title').value.trim();
+        if (!raw) return $('title').focus();
+        busy($('classify'), true, 'Thinking');
+        try {
+            const d = await call('classify', { title: raw });
+            $('title').value = d.title;
+            $('category').value = d.category;
+            if (d.title !== raw) {
+                $('raw').textContent = `Original listing: ${raw}`;
+                $('raw').classList.remove('hidden');
+            }
+            note($('msg'), '');
+        } catch (err) {
+            note($('msg'), err.message);
+        } finally {
+            busy($('classify'), false);
+        }
+    });
     // Detect as soon as a link is pasted
     $('url').addEventListener('paste', () => setTimeout(() => { if (!$('id').value) detect(); }, 0));
     $('image').addEventListener('change', () => setPreview($('image').value.trim()));

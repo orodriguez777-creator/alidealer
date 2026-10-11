@@ -216,3 +216,4 @@ footer {
     .form-grid { grid-template-columns: 1fr; }
     .preview { max-width: 160px; }
 }
+.masthead-meta .btn { text-transform: none; letter-spacing: 0; text-decoration: none; }

@@ -56,7 +56,10 @@
                             <div>
                                 <div class="field">
                                     <label for="title">Title</label>
-                                    <input class="input" id="title" required maxlength="160">
+                                    <div class="row">
+                                        <input class="input" id="title" required maxlength="300">
+                                        <button class="btn ghost" type="button" id="classify" title="Clean up the title and pick a category">Auto-categorize</button>
+                                    </div>
                                 </div>
                                 <div class="detected-raw hidden" id="raw"></div>
                                 <div class="field">

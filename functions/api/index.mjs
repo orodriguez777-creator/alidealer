@@ -18,7 +18,6 @@ const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-central-1' });
 const DATA_KEY = 'data/products.json';
 const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
 const AI_MODEL = 'gemini-3.1-flash-lite-preview';
-const URL_MODEL = 'gemini-3-flash-preview';
 
 export const CATEGORIES = [
     'Electronics', 'Phone Accessories', 'Computers & Office', 'Home & Kitchen',
@@ -144,6 +143,45 @@ async function fetchOpenGraph(itemId) {
     }
 }
 
+// Preferred: official AliExpress Affiliate API (needs app key + secret from portals.aliexpress.com)
+async function fetchViaAffiliateApi(itemId) {
+    const key = process.env.ALIEXPRESS_APP_KEY;
+    const secret = process.env.ALIEXPRESS_APP_SECRET;
+    if (!key || !secret) return null;
+    try {
+        const params = {
+            app_key: key,
+            method: 'aliexpress.affiliate.productdetail.get',
+            sign_method: 'sha256',
+            timestamp: String(Date.now()),
+            product_ids: itemId,
+            target_currency: 'USD',
+            target_language: 'EN',
+        };
+        const base = Object.keys(params).sort().map(k => k + params[k]).join('');
+        params.sign = createHmac('sha256', secret).update(base).digest('hex').toUpperCase();
+        const res = await fetch('https://api-sg.aliexpress.com/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+            body: new URLSearchParams(params),
+            signal: AbortSignal.timeout(8000),
+        });
+        const data = await res.json();
+        const p = data.aliexpress_affiliate_productdetail_get_response?.resp_result?.result?.products?.product?.[0];
+        if (!p) { console.error('[affiliate-api]', JSON.stringify(data).slice(0, 300)); return null; }
+        const amount = p.target_sale_price || p.sale_price;
+        return {
+            rawTitle: cleanTitle(p.product_title),
+            image: p.product_main_image_url || '',
+            price: amount ? `$${amount}` : '',
+            hint: [p.first_level_category_name, p.second_level_category_name].filter(Boolean).join(' > '),
+        };
+    } catch (e) {
+        console.error('[affiliate-api]', e.message);
+        return null;
+    }
+}
+
 // Last resort: public reader service
 async function fetchViaReader(itemId) {
     try {
@@ -152,13 +190,25 @@ async function fetchViaReader(itemId) {
             signal: AbortSignal.timeout(25000),
         });
         const data = (await res.json()).data || {};
-        const rawTitle = /maintaining|captcha|404/i.test(data.title || '') ? '' : cleanTitle(data.title);
-        const image = Object.values(data.images || {}).find(u => isProductImage(u) && /\/kf\//.test(u)) || '';
+        const rawTitle = /maintaining|captcha|404|^aliexpress/i.test(data.title || '') ? '' : cleanTitle(data.title);
+        // Product photos are jpg/webp under /kf/; pngs there are site logos and badges
+        const image = Object.values(data.images || {}).find(u => isProductImage(u) && /\/kf\/.+\.(jpe?g|webp)/i.test(u)) || '';
         return { rawTitle, image };
     } catch (e) {
         console.error('[reader]', e.message);
         return { rawTitle: '', image: '' };
     }
+}
+
+async function firstWorkingImage(candidates) {
+    for (const url of candidates) {
+        if (!isProductImage(url)) continue;
+        try {
+            const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000) });
+            if (res.ok && (res.headers.get('content-type') || '').startsWith('image/')) return url;
+        } catch { /* try next */ }
+    }
+    return '';
 }
 
 async function gemini(model, prompt, extra = {}, timeoutMs = 15000) {
@@ -184,24 +234,30 @@ function normalize(out, fallbackTitle) {
     };
 }
 
-async function classify(rawTitle) {
+async function classify(rawTitle, hint = '') {
     const out = await gemini(AI_MODEL, `You organise an AliExpress product catalog.
-Product listing title: "${rawTitle}"
+Product listing title: "${rawTitle}"${hint ? `\nAliExpress category: ${hint}` : ''}
 
 Return JSON with:
 ${OUTPUT_RULES}`, { generationConfig: { maxOutputTokens: 300, responseMimeType: 'application/json' } });
     return normalize(out, rawTitle);
 }
 
-// Google fetches the page itself (not blocked like cloud IPs) and classifies in one go
-async function readWithUrlContext(itemId) {
-    const out = await gemini(URL_MODEL, `Read https://www.aliexpress.com/item/${itemId}.html and reply with only JSON {"rawTitle": exact listing title or "", "image": og:image URL or ""}`, {
-        tools: [{ url_context: {} }],
-        generationConfig: { thinkingConfig: { thinkingLevel: 'low' } },
-    }, 30000);
-    const rawTitle = cleanTitle(out.rawTitle);
-    if (!rawTitle) return null;
-    return { rawTitle, image: isProductImage(out.image) ? out.image : '' };
+// The bot check on cloud IPs is intermittent, so keep retrying the direct read
+// while the reader service works in parallel. (AI "URL reading" was tried and
+// dropped: it returns confident titles of unrelated products.)
+async function readPage(itemId, deadline) {
+    let done = false;
+    const reader = fetchViaReader(itemId).then(r => { if (r.rawTitle) done = true; return r; });
+    let og = { rawTitle: '', image: '' };
+    while (!done && Date.now() < deadline) {
+        og = await fetchOpenGraph(itemId);
+        if (og.rawTitle) break;
+        await new Promise(r => setTimeout(r, 1500));
+    }
+    if (og.rawTitle && og.image) return og;
+    const r = await reader;
+    return { rawTitle: og.rawTitle || r.rawTitle, image: await firstWorkingImage([og.image, r.image]) };
 }
 
 async function handleDetect({ url }) {
@@ -211,22 +267,20 @@ async function handleDetect({ url }) {
     const itemId = await resolveItemId(url);
     if (!itemId) return json({ error: 'Could not find the product behind this link. Fill in the details manually.' }, 422);
 
-    let page = await fetchOpenGraph(itemId);
+    let page = await fetchViaAffiliateApi(itemId);
+    if (!page?.rawTitle) page = await readPage(itemId, Date.now() + 30000);
     if (!page.rawTitle) {
-        // Run both slower paths together; prefer Google's read, take the image from whichever has one
-        const [ai, reader] = await Promise.all([
-            readWithUrlContext(itemId).catch(e => { console.error('[url_context]', e.message); return null; }),
-            fetchViaReader(itemId),
-        ]);
-        page = ai ? { ...ai, image: ai.image || reader.image } : reader;
-    }
-    if (!page.rawTitle) {
-        return json({ itemId, image: page.image, title: '', category: '', warning: 'Could not read the product page. Fill in the title and category manually.' });
+        return json({ itemId, image: page.image, title: '', category: '', warning: 'AliExpress didn\'t let us read this page right now. Paste the product title below and press Auto-categorize, or try Detect again.' });
     }
 
     let detected = { title: page.rawTitle, category: 'Other' };
-    try { detected = await classify(page.rawTitle); } catch (e) { console.error('[classify]', e.message); }
-    return json({ itemId, image: page.image, rawTitle: page.rawTitle, ...detected });
+    try { detected = await classify(page.rawTitle, page.hint); } catch (e) { console.error('[classify]', e.message); }
+    return json({ itemId, image: page.image, price: page.price || '', rawTitle: page.rawTitle, ...detected });
+}
+
+async function handleClassify({ title }) {
+    if (!String(title || '').trim()) return json({ error: 'Enter a title first' }, 400);
+    return json(await classify(String(title).slice(0, 300)));
 }
 
 // ---------- CRUD ----------
@@ -290,6 +344,7 @@ export const handler = async (event) => {
         switch (body.action) {
             case 'check':  return json({ ok: true, categories: CATEGORIES });
             case 'detect': return await handleDetect(body);
+            case 'classify': return await handleClassify(body);
             case 'save':   return await handleSave(body);
             case 'delete': return await handleDelete(body);
             default:       return json({ error: 'Unknown action' }, 400);
