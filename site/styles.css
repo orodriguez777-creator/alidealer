@@ -73,10 +73,11 @@ button, input, select { font: inherit; color: inherit; }
 }
 @keyframes roll { from { opacity: 0; transform: translateX(-40px); } }
 .logo-text { display: flex; flex-direction: column; gap: 10px; }
+.brand small { font-size: .4em; font-weight: 700; letter-spacing: .08em; opacity: .9; }
 .brand {
     font-family: var(--display);
     font-weight: 600;
-    font-size: clamp(34px, 8vw, 104px);
+    font-size: clamp(26px, 7.2vw, 104px);
     line-height: .9;
     letter-spacing: .02em;
     text-transform: uppercase;

@@ -2,7 +2,7 @@
     const $ = (id) => document.getElementById(id);
     const state = { products: [], category: 'All', q: '' };
 
-    $('brand').textContent = SITE.name;
+    $('brand').innerHTML = brandHtml(SITE.name);
     $('tagline').textContent = SITE.tagline;
     $('copy').textContent = `© ${new Date().getFullYear()} ${SITE.name}`;
 

@@ -5,6 +5,7 @@
     let products = [];
 
     document.title = `Admin — ${SITE.name}`;
+    $('brand').innerHTML = brandHtml(SITE.name);
 
     function show(section) {
         $('login').classList.toggle('hidden', section !== 'login');

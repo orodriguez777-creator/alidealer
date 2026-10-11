@@ -1,6 +1,6 @@
 // Shared settings for the storefront and admin pages
 window.SITE = {
-    name: 'AliDealer',
+    name: 'www.Alidealer.com',
     tagline: 'Hand-picked AliExpress deals, checked and sorted so you don\'t have to dig.',
     api: 'https://ghzfcfbdwidurfqkjaateras4m0hnndz.lambda-url.eu-central-1.on.aws/',
 };
@@ -14,6 +14,12 @@ window.api = async function api(action, data = {}, token) {
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw Object.assign(new Error(body.error || `Request failed (${res.status})`), { status: res.status });
     return body;
+};
+
+// Brand wordmark: "www." and the TLD set small around the name, like a web address
+window.brandHtml = (name) => {
+    const m = String(name).match(/^(www\.)?(.+?)(\.[a-z]{2,})?$/i);
+    return `${m[1] ? `<small>${esc(m[1])}</small>` : ''}${esc(m[2])}${m[3] ? `<small>${esc(m[3])}</small>` : ''}`;
 };
 
 window.esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
