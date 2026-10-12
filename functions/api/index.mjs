@@ -18,6 +18,7 @@ const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-central-1' });
 const DATA_KEY = 'data/products.json';
 const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
 const AI_MODEL = 'gemini-3.1-flash-lite-preview';
+const TRANSLATE_MODEL = 'gemini-3-flash-preview';
 
 export const CATEGORIES = [
     'Electronics', 'Phone Accessories', 'Computers & Office', 'Home & Kitchen',
@@ -288,6 +289,38 @@ async function handleClassify({ title }) {
     return json(await classify(String(title).slice(0, 300)));
 }
 
+// ---------- Hebrew titles (for the storefront's Hebrew mode) ----------
+
+async function translateTitles(titles) {
+    const out = await gemini(TRANSLATE_MODEL, `Translate these online-store product names into natural, concise Hebrew, the way an Israeli shop would list them.
+Keep brand names, model numbers and units (e.g. Baseus, MC2, 100W, USB-C) in Latin characters.
+Return JSON {"he": [...]} with exactly ${titles.length} strings, in the same order.
+
+${JSON.stringify(titles)}`, { generationConfig: { maxOutputTokens: 8000, responseMimeType: 'application/json' } }, 30000);
+    if (!Array.isArray(out.he) || out.he.length !== titles.length) throw new Error('translation came back incomplete');
+    return out.he.map(t => String(t || '').trim().slice(0, 160));
+}
+
+// Products added before Hebrew existed get translated once, on the next list.
+// After a failure, wait before trying again so visitors aren't held up.
+let translateRetryAt = 0;
+async function fillHebrewTitles(products) {
+    const missing = products.filter(p => !p.titleHe);
+    if (!missing.length || Date.now() < translateRetryAt) return;
+    try {
+        const he = await translateTitles(missing.map(p => p.title));
+        const byId = new Map(missing.map((p, i) => [p.id, { title: p.title, he: he[i] }]));
+        missing.forEach((p, i) => { p.titleHe = he[i]; });
+        // re-read before writing so an admin save made meanwhile isn't lost
+        const fresh = await loadProducts();
+        fresh.forEach(p => { const t = byId.get(p.id); if (t && !p.titleHe && p.title === t.title) p.titleHe = t.he; });
+        await saveProducts(fresh);
+    } catch (e) {
+        console.error('[translate]', e.message);
+        translateRetryAt = Date.now() + 10 * 60 * 1000;
+    }
+}
+
 // ---------- CRUD ----------
 
 async function handleSave(body) {
@@ -308,10 +341,15 @@ async function handleSave(body) {
     if (body.id) {
         product = products.find(p => p.id === body.id);
         if (!product) return json({ error: 'Product not found' }, 404);
+        if (product.title === fields.title && product.titleHe) fields.titleHe = product.titleHe;
         Object.assign(product, fields, { updatedAt: new Date().toISOString() });
     } else {
         product = { id: randomUUID(), ...fields, createdAt: new Date().toISOString() };
         products.unshift(product);
+    }
+    if (!fields.titleHe) {
+        try { [product.titleHe] = await translateTitles([fields.title]); }
+        catch (e) { console.error('[translate]', e.message); delete product.titleHe; }
     }
     await saveProducts(products);
     return json({ product });
@@ -332,8 +370,11 @@ export const handler = async (event) => {
         const body = JSON.parse(raw || '{}');
 
         switch (body.action) {
-            case 'list':
-                return json({ products: await loadProducts(), categories: CATEGORIES });
+            case 'list': {
+                const products = await loadProducts();
+                await fillHebrewTitles(products);
+                return json({ products, categories: CATEGORIES });
+            }
 
             case 'login':
                 if (!process.env.ADMIN_PASSWORD) return json({ error: 'Admin password is not configured yet' }, 503);

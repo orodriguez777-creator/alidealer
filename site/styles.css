@@ -95,7 +95,7 @@ button, input, select { font: inherit; color: inherit; }
     color: transparent;
 }
 .masthead-meta {
-    text-align: right;
+    text-align: end;
     font-size: 13px;
     text-transform: uppercase;
     letter-spacing: .12em;
@@ -112,6 +112,38 @@ button, input, select { font: inherit; color: inherit; }
     font-size: 15px;
     color: var(--ink-soft);
 }
+
+/* ---------- language switch ---------- */
+.lang {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-bottom: 14px;
+    border: 1px solid rgba(255,255,255,.7); border-radius: 100px;
+    padding: 6px 13px 5px;
+    background: rgba(255,255,255,.12); color: #fff;
+    font: 600 14px/1 var(--body); letter-spacing: 0; text-transform: none;
+    cursor: pointer; transition: background .15s;
+}
+.lang:hover { background: rgba(255,255,255,.25); }
+.lang .icon { width: 16px; height: 16px; }
+.lang[lang="he"] { font-family: 'Rubik', sans-serif; }
+
+/* ---------- Hebrew: right-to-left, Hebrew-capable fonts ---------- */
+html[lang="he"] {
+    --display: 'Rubik', 'Josefin Sans', sans-serif;
+    --body: 'Rubik', 'Instrument Sans', sans-serif;
+}
+html[lang="he"] .lang { font-family: var(--body); }
+html[lang="he"] .lang[lang="en"] { font-family: 'Instrument Sans', sans-serif; }
+html[lang="he"] .brand { font-family: 'Josefin Sans', sans-serif; }
+html[lang="he"] .slogan,
+html[lang="he"] .masthead-meta,
+html[lang="he"] .card-cat,
+html[lang="he"] .lucky-label { letter-spacing: .04em; }
+html[lang="he"] .slogan { font-size: clamp(13px, 1.6vw, 19px); word-spacing: .25em; }
+html[lang="he"] .logo { direction: ltr; }
+html[lang="he"] .logo-text { direction: rtl; text-align: end; }
+html[lang="he"] .go .icon { transform: scaleX(-1); }
+html[lang="he"] .card:hover .go .icon { transform: scaleX(-1) translate(2px, -2px); }
 
 /* ---------- toolbar ---------- */
 .toolbar {
@@ -133,7 +165,7 @@ button, input, select { font: inherit; color: inherit; }
     cursor: pointer;
     transition: background .15s, color .15s;
 }
-.chip sup { font-size: 10px; margin-left: 3px; opacity: .6; }
+.chip sup { font-size: 10px; margin-inline-start: 3px; opacity: .6; }
 .chip:hover { background: var(--paper-2); }
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .search {
@@ -171,7 +203,7 @@ button, input, select { font: inherit; color: inherit; }
 @keyframes pop { from { opacity: 0; transform: scale(.92) translateY(12px); } }
 .lucky::backdrop { background: rgba(43, 26, 12, .55); }
 .lucky-close {
-    position: absolute; top: 10px; right: 12px;
+    position: absolute; top: 10px; inset-inline-end: 12px;
     border: 0; background: none; font-size: 28px; line-height: 1; color: var(--ink-soft); cursor: pointer;
 }
 .lucky-label { font-family: var(--display); font-weight: 700; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--orange); margin-bottom: 12px; }
@@ -218,7 +250,7 @@ button, input, select { font: inherit; color: inherit; }
 .card-img .noimg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--line); }
 .card-img .noimg .icon { width: 48px; height: 48px; stroke-width: 1.2; }
 .card-num {
-    position: absolute; top: 10px; left: 10px;
+    position: absolute; top: 10px; inset-inline-start: 10px;
     font-family: var(--display); font-weight: 700; font-size: 13px;
     background: var(--sun); color: var(--ink); padding: 3px 8px 1px; border-radius: 100px;
 }
@@ -295,7 +327,7 @@ footer {
 @media (max-width: 860px) {
     .admin-layout { grid-template-columns: 1fr; }
     .hero-inner { grid-template-columns: 1fr; }
-    .masthead-meta { text-align: left; }
+    .masthead-meta { text-align: start; }
     .toolbar { flex-direction: column; align-items: stretch; }
     .search { width: 100%; }
     .tagline, footer { flex-direction: column; }
