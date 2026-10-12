@@ -46,6 +46,10 @@
                 <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                 <input id="q" type="search" placeholder="Search finds" aria-label="Search finds">
             </label>
+            <button class="surprise" id="surprise" type="button" disabled>
+                <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="3"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="16" cy="8" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="8" cy="16" r="1.2" fill="currentColor"/><circle cx="16" cy="16" r="1.2" fill="currentColor"/></svg>
+                Surprise me
+            </button>
         </nav>
 
         <main class="grid" id="grid"></main>
@@ -55,6 +59,19 @@
             <span id="copy"></span>
         </footer>
     </div>
+
+    <dialog class="lucky" id="lucky" aria-labelledby="lucky-title">
+        <button class="lucky-close" id="lucky-close" type="button" aria-label="Close">&times;</button>
+        <div class="lucky-label" id="lucky-label">Random find</div>
+        <div class="lucky-img" id="lucky-img"></div>
+        <div class="card-cat" id="lucky-cat"></div>
+        <h3 class="card-title" id="lucky-title"></h3>
+        <div class="price" id="lucky-price"></div>
+        <div class="lucky-actions">
+            <button class="btn ghost" id="lucky-again" type="button">Spin again</button>
+            <a class="btn accent" id="lucky-go" target="_blank" rel="sponsored nofollow noopener">See on AliExpress</a>
+        </div>
+    </dialog>
 
     <script src="/config.js"></script>
     <script src="/store.js"></script>

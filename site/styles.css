@@ -144,6 +144,52 @@ button, input, select { font: inherit; color: inherit; }
 }
 .search input { border: 0; background: transparent; outline: none; width: 100%; font-size: 15px; }
 
+/* ---------- Surprise me ---------- */
+.surprise {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 0; border-radius: 100px;
+    padding: 8px 16px 7px;
+    background: var(--brand-grad);
+    color: var(--ink); font-family: var(--display); font-weight: 700; font-size: 15px;
+    white-space: nowrap; cursor: pointer;
+    box-shadow: 0 2px 0 rgba(43, 26, 12, .18);
+    transition: transform .15s;
+}
+.surprise .icon { width: 18px; height: 18px; transition: transform .4s cubic-bezier(.2,.7,.2,1); }
+.surprise:hover .icon { transform: rotate(-90deg); }
+.surprise:active { transform: translateY(1px); }
+.surprise:disabled { opacity: .5; cursor: default; }
+
+.lucky {
+    margin: auto; width: min(420px, calc(100vw - 32px));
+    border: 0; border-radius: 16px;
+    padding: 22px 22px 24px;
+    background: var(--paper); color: var(--ink);
+    box-shadow: 0 30px 80px rgba(43, 26, 12, .35);
+}
+.lucky[open] { animation: pop .35s cubic-bezier(.2,.7,.2,1); }
+@keyframes pop { from { opacity: 0; transform: scale(.92) translateY(12px); } }
+.lucky::backdrop { background: rgba(43, 26, 12, .55); }
+.lucky-close {
+    position: absolute; top: 10px; right: 12px;
+    border: 0; background: none; font-size: 28px; line-height: 1; color: var(--ink-soft); cursor: pointer;
+}
+.lucky-label { font-family: var(--display); font-weight: 700; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--orange); margin-bottom: 12px; }
+.lucky-img {
+    position: relative; aspect-ratio: 1; overflow: hidden;
+    background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+}
+.lucky-img img { width: 100%; height: 100%; object-fit: cover; }
+.lucky-img .noimg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--line); }
+.lucky-img .noimg .icon { width: 48px; height: 48px; }
+.lucky .price { margin-top: 8px; }
+.lucky.spinning .lucky-img img { filter: blur(1.5px) saturate(1.2); }
+.lucky:not(.spinning) .lucky-img { animation: land .45s cubic-bezier(.2,.7,.2,1); }
+@keyframes land { 0% { transform: scale(.96); } 60% { transform: scale(1.02); } }
+.lucky-actions { display: flex; gap: 10px; margin-top: 18px; }
+.lucky-actions .btn { flex: 1; justify-content: center; text-align: center; text-decoration: none; }
+.lucky-actions a.btn:not([href]) { opacity: .5; pointer-events: none; }
+
 /* ---------- grid ---------- */
 .grid {
     display: grid;
