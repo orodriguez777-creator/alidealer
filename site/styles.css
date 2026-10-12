@@ -306,6 +306,15 @@ footer {
 @media (max-width: 600px) {
     .wrap { padding: 0 18px; }
     .card-img { margin: 0 -18px; border-left: 0; border-right: 0; border-radius: 0; }
+    /* compact random-find card: thumbnail beside the text, not a full-width photo */
+    .lucky { padding: 18px 16px 18px; }
+    .lucky[open] { display: grid; grid-template-columns: 104px 1fr; grid-template-rows: auto auto auto 1fr auto; column-gap: 14px; }
+    .lucky-label { grid-column: 1 / -1; margin-bottom: 10px; }
+    .lucky-img { grid-column: 1; grid-row: 2 / 5; align-self: start; }
+    .lucky #lucky-cat { grid-column: 2; grid-row: 2; }
+    .lucky .card-title { grid-column: 2; grid-row: 3; font-size: 16px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .lucky .price { grid-column: 2; grid-row: 4; margin-top: 4px; }
+    .lucky-actions { grid-column: 1 / -1; grid-row: 5; margin-top: 14px; }
 }
 .masthead-meta .btn { text-transform: none; letter-spacing: 0; text-decoration: none; }
 .hero .btn.ghost { color: #fff; border-color: rgba(255,255,255,.7); }
