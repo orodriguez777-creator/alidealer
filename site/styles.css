@@ -256,6 +256,11 @@ footer {
     .form-grid { grid-template-columns: 1fr; }
     .preview { max-width: 160px; }
 }
+/* phones: one product per row, photo runs edge to edge */
+@media (max-width: 600px) {
+    .wrap { padding: 0 18px; }
+    .card-img { margin: 0 -18px; border-left: 0; border-right: 0; border-radius: 0; }
+}
 .masthead-meta .btn { text-transform: none; letter-spacing: 0; text-decoration: none; }
 .hero .btn.ghost { color: #fff; border-color: rgba(255,255,255,.7); }
 .hero .btn.ghost:hover { background: rgba(255,255,255,.15); }
