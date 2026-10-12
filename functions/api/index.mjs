@@ -164,6 +164,8 @@ async function fetchViaAffiliateApi(itemId) {
             product_ids: itemId,
             target_currency: 'USD',
             target_language: 'EN',
+            // prices differ per country; the owner shops from Israel and sees Israel prices in USD
+            country: 'IL',
         };
         const base = Object.keys(params).sort().map(k => k + params[k]).join('');
         params.sign = createHmac('sha256', secret).update(base).digest('hex').toUpperCase();
