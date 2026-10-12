@@ -1,7 +1,7 @@
 /**
  * Affiliate catalog API
  *
- * Public:  list
+ * Public:  list, GET ?go=<productId> (redirect to the product page)
  * Admin:   login, detect, save, delete  (require ADMIN_PASSWORD-derived token)
  *
  * Products are stored as one JSON document in the project bucket
@@ -113,6 +113,39 @@ async function resolveItemId(url) {
         return findItemId(body);
     }
     return null;
+}
+
+// ---------- outbound product links ----------
+
+// Short affiliate links (s.click.aliexpress.com/e/…) are claimed by the AliExpress
+// phone app, which often can't resolve them and opens its home screen. So the
+// storefront links here instead: we follow the short link ourselves (AliExpress
+// records the affiliate click) and send the visitor straight to the product page,
+// which carries AliExpress's affiliate tracking parameters.
+async function productPageUrl(link, ua) {
+    let current = link;
+    for (let hop = 0; hop < 6; hop++) {
+        const url = new URL(current);
+        if (/\/item\/\d+\.html$/.test(url.pathname) && /(^|\.)aliexpress\./.test(url.hostname)) {
+            url.hostname = 'www.aliexpress.com';
+            return url.toString();
+        }
+        const res = await fetch(current, { redirect: 'manual', headers: { 'User-Agent': ua || BROWSER_UA }, signal: AbortSignal.timeout(4000) });
+        const location = res.headers.get('location');
+        if (!location) return null;
+        current = new URL(location, current).toString();
+    }
+    return null;
+}
+
+async function handleGo(id, ua) {
+    const product = (await loadProducts()).find(p => p.id === id);
+    let target = product?.url || 'https://alidealer.com/';
+    if (product) {
+        try { target = await productPageUrl(product.url, ua) || product.url; }
+        catch (e) { console.error('[go]', e.message); }
+    }
+    return { statusCode: 302, headers: { Location: target, 'Cache-Control': 'no-store' }, body: '' };
 }
 
 function metaContent(html, prop) {
@@ -368,6 +401,9 @@ export const handler = async (event) => {
     if (event.requestContext?.http?.method === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
 
     try {
+        const go = event.queryStringParameters?.go;
+        if (go) return await handleGo(go, event.headers?.['user-agent']);
+
         const raw = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : event.body;
         const body = JSON.parse(raw || '{}');
 

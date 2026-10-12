@@ -64,6 +64,9 @@
     let lang = localStorage.getItem('lang') || (/^(he|iw)\b/i.test(navigator.language) ? 'he' : 'en');
     const t = (key) => STRINGS[lang][key];
     const catName = (c) => (lang === 'he' && CATEGORY_HE[c]) || c;
+    // via our API, which opens the product page itself rather than the short
+    // affiliate link (the AliExpress phone app opens short links on its home screen)
+    const goUrl = (p) => `/api?go=${encodeURIComponent(p.id)}`;
     const titleOf = (p) => (lang === 'he' && p.titleHe) || p.title;
 
     function applyLang() {
@@ -122,7 +125,7 @@
         }
 
         $('grid').innerHTML = items.map((p, i) => `
-            <a class="card" href="${esc(p.url)}" target="_blank" rel="sponsored nofollow noopener" style="animation-delay:${Math.min(i, 16) * 45}ms">
+            <a class="card" href="${goUrl(p)}" target="_blank" rel="sponsored nofollow noopener" style="animation-delay:${Math.min(i, 16) * 45}ms">
                 <div class="card-img">
                     ${p.image
                         ? `<img src="${esc(p.image)}" alt="${esc(titleOf(p))}" loading="lazy" referrerpolicy="no-referrer">`
@@ -193,7 +196,7 @@
 
         showInLucky(pick);
         lastPick = pick;
-        $('lucky-go').href = pick.url;
+        $('lucky-go').href = goUrl(pick);
         $('lucky-label').textContent = pickLabel();
         lucky.classList.remove('spinning');
         $('lucky-again').disabled = false;
