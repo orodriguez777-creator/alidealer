@@ -3,6 +3,7 @@
     const TOKEN_KEY = 'haul_admin_token';
     let token = localStorage.getItem(TOKEN_KEY);
     let products = [];
+    let clicks = {};
 
     document.title = `Admin — ${SITE.name}`;
     $('brand').innerHTML = brandHtml(SITE.name);
@@ -155,16 +156,24 @@
 
     // ---------- list ----------
 
+    const clicksOf = (p) => clicks[p.id] || { total: 0, week: 0 };
+
     function renderList() {
         $('total').textContent = `(${products.length})`;
-        $('list').innerHTML = products.length ? products.map(p => `
+        const sum = Object.values(clicks).reduce((a, c) => ({ total: a.total + c.total, week: a.week + c.week }), { total: 0, week: 0 });
+        $('clicks-sum').textContent = `${sum.total} clicks to AliExpress in total · ${sum.week} in the last 7 days`;
+        const sort = $('sort').value;
+        const sorted = sort === 'new' ? products : [...products].sort((a, b) => clicksOf(b)[sort === 'week' ? 'week' : 'total'] - clicksOf(a)[sort === 'week' ? 'week' : 'total']);
+        $('list').innerHTML = products.length ? sorted.map(p => `
             <li data-id="${esc(p.id)}">
                 ${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<div class="ph"></div>'}
                 <div>
                     <div class="t">${esc(p.title)}</div>
                     <div class="c">${esc(p.category)}${p.price ? ` · ${esc(p.price)}` : ''}</div>
+                    <div class="clicks"><b>${clicksOf(p).total}</b> clicks · ${clicksOf(p).week} this week</div>
                 </div>
                 <div class="actions">
+                    <button class="btn ghost small" data-act="post" title="Create post">${icon('megaphone')}</button>
                     <a class="btn ghost small" href="${esc(p.url)}" target="_blank" rel="noopener" title="Open link">${icon('external')}</a>
                     <button class="btn ghost small" data-act="edit" title="Edit">${icon('pencil')}</button>
                     <button class="btn ghost small" data-act="delete" title="Delete">${icon('trash')}</button>
@@ -176,7 +185,9 @@
         const btn = e.target.closest('button[data-act]');
         if (!btn) return;
         const p = products.find(x => x.id === btn.closest('li').dataset.id);
-        if (btn.dataset.act === 'edit') {
+        if (btn.dataset.act === 'post') {
+            openPost(p);
+        } else if (btn.dataset.act === 'edit') {
             $('id').value = p.id;
             $('itemId').value = p.itemId || '';
             $('url').value = p.url;
@@ -201,9 +212,84 @@
     });
 
     async function loadList() {
-        ({ products } = await api('list'));
+        const [list, stats] = await Promise.all([api('list'), call('stats').catch(() => null)]);
+        products = list.products;
+        if (stats) clicks = stats.clicks;
         renderList();
     }
+    $('sort').addEventListener('change', renderList);
+
+    // ---------- create post ----------
+
+    const postbox = $('postbox');
+    let posting = null;
+    let postLang = 'he';
+    const POST_UI = {
+        he: { copy: 'העתקה', copied: 'הועתק!', again: 'כתבו מחדש', wa: 'וואטסאפ', tg: 'טלגרם', writing: 'כותבים…' },
+        en: { copy: 'Copy', copied: 'Copied!', again: 'Rewrite', wa: 'WhatsApp', tg: 'Telegram', writing: 'Writing…' },
+    };
+
+    function setPostLabels() {
+        const ui = POST_UI[postLang];
+        $('post-copy').innerHTML = `${icon('copy')} ${ui.copy}`;
+        $('post-wa').innerHTML = `${icon('chat')} ${ui.wa}`;
+        $('post-again').innerHTML = `${icon('sparkles')} ${ui.again}`;
+        $('post-tg').innerHTML = `${icon('send')} ${ui.tg}`;
+        postbox.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === postLang)));
+        $('post-text').dir = postLang === 'he' ? 'rtl' : 'ltr';
+    }
+
+    function syncPostLinks() {
+        const text = $('post-text').value;
+        $('post-wa').href = `https://wa.me/?text=${encodeURIComponent(text)}`;
+        $('post-tg').href = `https://t.me/share/url?url=${encodeURIComponent(shareLink(posting.id, postLang))}&text=${encodeURIComponent(text.replace(/\n*👉\s*\S+\s*$/, ''))}`;
+    }
+
+    async function writePost() {
+        const ui = POST_UI[postLang];
+        note($('post-msg'), '');
+        $('post-text').value = ui.writing;
+        $('post-text').disabled = true;
+        busy($('post-again'), true, ui.writing);
+        try {
+            const { post } = await call('post', { id: posting.id, lang: postLang });
+            $('post-text').value = post;
+        } catch (err) {
+            $('post-text').value = '';
+            note($('post-msg'), err.message);
+        } finally {
+            $('post-text').disabled = false;
+            busy($('post-again'), false);
+            setPostLabels();
+            syncPostLinks();
+        }
+    }
+
+    function openPost(p) {
+        posting = p;
+        $('post-img').innerHTML = p.image ? `<img src="${esc(p.image)}" alt="" referrerpolicy="no-referrer">` : '';
+        $('post-name').textContent = p.title;
+        setPostLabels();
+        postbox.showModal();
+        writePost();
+    }
+
+    postbox.querySelector('.seg').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-lang]');
+        if (!b || b.dataset.lang === postLang) return;
+        postLang = b.dataset.lang;
+        setPostLabels();
+        writePost();
+    });
+    $('post-again').addEventListener('click', writePost);
+    $('post-text').addEventListener('input', syncPostLinks);
+    $('post-copy').addEventListener('click', async () => {
+        await navigator.clipboard.writeText($('post-text').value);
+        $('post-copy').innerHTML = `${icon('copy')} ${POST_UI[postLang].copied}`;
+        setTimeout(setPostLabels, 1600);
+    });
+    $('post-close').addEventListener('click', () => postbox.close());
+    postbox.addEventListener('click', (e) => { if (e.target === postbox) postbox.close(); });
 
     async function start() {
         show('app');

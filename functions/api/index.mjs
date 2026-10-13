@@ -1,8 +1,9 @@
 /**
  * Affiliate catalog API
  *
- * Public:  list, GET ?go=<productId> (redirect to the product page)
- * Admin:   login, detect, save, delete  (require ADMIN_PASSWORD-derived token)
+ * Public:  list, GET ?go=<productId> (count the click, redirect to the product page),
+ *          GET ?share=[he/]<productId> (link-preview page for one deal)
+ * Admin:   login, detect, save, delete, stats, post  (require ADMIN_PASSWORD-derived token)
  *
  * Products are stored as one JSON document in the project bucket
  * (data/products.json) — a single admin writes, everyone reads.
@@ -11,11 +12,14 @@
  * - ADMIN_PASSWORD  (secret, set via functions/api/.env)
  * - STORAGE_BUCKET, OPENKBS_API_KEY (injected)
  */
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-central-1' });
 const DATA_KEY = 'data/products.json';
+const CLICKS_KEY = 'data/clicks.json';
+const CLICK_EVENTS = 'clicks/events/';
+const SITE_URL = 'https://alidealer.com';
 const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
 const AI_MODEL = 'gemini-3.1-flash-lite-preview';
 const TRANSLATE_MODEL = 'gemini-3-flash-preview';
@@ -142,10 +146,142 @@ async function handleGo(id, ua) {
     const product = (await loadProducts()).find(p => p.id === id);
     let target = product?.url || 'https://alidealer.com/';
     if (product) {
+        const counted = recordClick(product.id, ua);
         try { target = await productPageUrl(product.url, ua) || product.url; }
         catch (e) { console.error('[go]', e.message); }
+        await counted;
     }
     return { statusCode: 302, headers: { Location: target, 'Cache-Control': 'no-store' }, body: '' };
+}
+
+// ---------- click counting ----------
+
+// Each click is its own tiny object, so simultaneous clicks never overwrite each
+// other. The admin's stats call folds them into data/clicks.json and removes them.
+const BOT_UA = /bot|crawl|spider|preview|facebookexternalhit|whatsapp|telegram|slack|discord|curl|wget|python|headless/i;
+
+async function recordClick(id, ua) {
+    if (BOT_UA.test(ua || '')) return;
+    try {
+        await s3.send(new PutObjectCommand({
+            Bucket: process.env.STORAGE_BUCKET,
+            Key: `${CLICK_EVENTS}${id}/${Date.now()}-${randomUUID().slice(0, 8)}`,
+            Body: '',
+        }));
+    } catch (e) { console.error('[click]', e.message); }
+}
+
+const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+async function loadClicks() {
+    try {
+        const res = await s3.send(new GetObjectCommand({ Bucket: process.env.STORAGE_BUCKET, Key: CLICKS_KEY }));
+        return JSON.parse(await res.Body.transformToString());
+    } catch (e) {
+        if (e.name === 'NoSuchKey') return {};
+        throw e;
+    }
+}
+
+async function handleStats() {
+    const Bucket = process.env.STORAGE_BUCKET;
+    const clicks = await loadClicks();
+    const keys = [];
+    let token;
+    do {
+        const page = await s3.send(new ListObjectsV2Command({ Bucket, Prefix: CLICK_EVENTS, ContinuationToken: token }));
+        for (const { Key } of page.Contents || []) {
+            const [id, stamp] = Key.slice(CLICK_EVENTS.length).split('/');
+            const day = dayOf(Number(stamp.split('-')[0]));
+            const c = clicks[id] ||= { total: 0, days: {} };
+            c.total++;
+            c.days[day] = (c.days[day] || 0) + 1;
+            keys.push(Key);
+        }
+        token = page.NextContinuationToken;
+    } while (token);
+
+    // per-day counts only matter for "this week"; keep a month of them
+    const cutoff = dayOf(Date.now() - 30 * 86400000);
+    for (const c of Object.values(clicks)) {
+        for (const d of Object.keys(c.days)) if (d < cutoff) delete c.days[d];
+    }
+    if (keys.length) {
+        await s3.send(new PutObjectCommand({ Bucket, Key: CLICKS_KEY, Body: JSON.stringify(clicks), ContentType: 'application/json' }));
+        for (let i = 0; i < keys.length; i += 1000) {
+            await s3.send(new DeleteObjectsCommand({ Bucket, Delete: { Objects: keys.slice(i, i + 1000).map(Key => ({ Key })), Quiet: true } }));
+        }
+    }
+
+    const weekStart = dayOf(Date.now() - 6 * 86400000);
+    const out = {};
+    for (const [id, c] of Object.entries(clicks)) {
+        out[id] = { total: c.total, week: Object.entries(c.days).reduce((n, [d, v]) => n + (d >= weekStart ? v : 0), 0) };
+    }
+    return json({ clicks: out });
+}
+
+// ---------- sharing ----------
+
+const shareUrl = (id, lang) => `${SITE_URL}/d/${lang === 'he' ? 'he/' : ''}${id}`;
+const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// What WhatsApp, Facebook and Telegram read when a deal link is posted: the deal's
+// own photo, name and price. People who open it land on the storefront with the deal shown.
+async function handleShare(param) {
+    const [lang, id] = param.startsWith('he/') ? ['he', param.slice(3)] : ['en', param];
+    const p = (await loadProducts()).find(x => x.id === id);
+    const he = lang === 'he';
+    const title = p ? ((he && p.titleHe) || p.title) : 'www.Alidealer.com';
+    const desc = p
+        ? [p.price, he ? 'נבחר בקפידה ב-www.Alidealer.com' : 'Hand-picked on www.Alidealer.com'].filter(Boolean).join(' · ')
+        : (he ? 'רק הדילים הכי טובים מ-AliExpress' : 'Only the best AliExpress deals');
+    const image = p?.image || `${SITE_URL}/og.jpg`;
+    const target = p ? `${SITE_URL}/?deal=${encodeURIComponent(p.id)}${he ? '&lang=he' : ''}` : SITE_URL + '/';
+    const html = `<!DOCTYPE html>
+<html lang="${lang}" dir="${he ? 'rtl' : 'ltr'}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escHtml(title)} — www.Alidealer.com</title>
+<meta name="description" content="${escHtml(desc)}">
+<meta name="robots" content="noindex">
+<meta property="og:type" content="product">
+<meta property="og:site_name" content="www.Alidealer.com">
+<meta property="og:title" content="${escHtml(title)}">
+<meta property="og:description" content="${escHtml(desc)}">
+<meta property="og:image" content="${escHtml(image)}">
+<meta property="og:url" content="${escHtml(p ? shareUrl(p.id, lang) : SITE_URL)}">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="${escHtml(target)}">
+<meta http-equiv="refresh" content="0;url=${escHtml(target)}">
+</head>
+<body><a href="${escHtml(target)}">${escHtml(title)}</a><script>location.replace(${JSON.stringify(target)})</script></body>
+</html>`;
+    return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300' }, body: html };
+}
+
+// Ready-to-paste social post for one deal
+async function handlePost({ id, lang }) {
+    const p = (await loadProducts()).find(x => x.id === id);
+    if (!p) return json({ error: 'Product not found' }, 404);
+    const he = lang === 'he';
+    const link = shareUrl(p.id, he ? 'he' : 'en');
+    const out = await gemini(TRANSLATE_MODEL, `Write a short social media post (for WhatsApp groups, Facebook and Telegram) promoting this AliExpress deal from the shop www.Alidealer.com.
+Product: ${(he && p.titleHe) || p.title}
+Category: ${p.category}
+${p.price ? `Price: ${p.price}` : 'Price: not given, do not invent one'}
+
+Rules:
+- Language: ${he ? 'natural, everyday Israeli Hebrew' : 'casual, friendly English'}
+- 3 to 5 short lines: a catchy hook, why it is useful, ${p.price ? 'the price, ' : ''}a call to action
+- A few fitting emoji are welcome; no more than 2 hashtags
+- Do not make claims you cannot know (ratings, stock, shipping time, discounts)
+- Do not include any link; it is added after your text
+Return JSON {"post": "..."} using \n for line breaks.`, { generationConfig: { maxOutputTokens: 1000, responseMimeType: 'application/json', temperature: 1 } }, 30000);
+    const text = String(out.post || '').trim();
+    if (!text) return json({ error: 'The writer came back empty, please try again' }, 502);
+    return json({ post: `${text}\n\n👉 ${link}`, link });
 }
 
 function metaContent(html, prop) {
@@ -403,6 +539,8 @@ export const handler = async (event) => {
     try {
         const go = event.queryStringParameters?.go;
         if (go) return await handleGo(go, event.headers?.['user-agent']);
+        const share = event.queryStringParameters?.share;
+        if (share) return await handleShare(share);
 
         const raw = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : event.body;
         const body = JSON.parse(raw || '{}');
@@ -431,6 +569,8 @@ export const handler = async (event) => {
             case 'classify': return await handleClassify(body);
             case 'save':   return await handleSave(body);
             case 'delete': return await handleDelete(body);
+            case 'stats':  return await handleStats();
+            case 'post':   return await handlePost(body);
             default:       return json({ error: 'Unknown action' }, 400);
         }
     } catch (error) {

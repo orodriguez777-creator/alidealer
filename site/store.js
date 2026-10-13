@@ -26,6 +26,11 @@
             noItems: ['First finds coming soon', 'Check back shortly.'],
             loadFailed: ['Couldn\'t load finds', 'Please refresh in a moment.'],
             switchTo: 'עברית',
+            share: 'Share',
+            shareDeal: 'Share this deal',
+            sharedWithYou: 'Shared with you',
+            copyLink: 'Copy link',
+            copied: 'Link copied',
         },
         he: {
             pageTitle: 'www.Alidealer.com — רק הדילים הכי טובים מ-AliExpress',
@@ -48,6 +53,11 @@
             noItems: ['המוצרים הראשונים יגיעו בקרוב', 'בדקו שוב בקרוב.'],
             loadFailed: ['לא הצלחנו לטעון את המוצרים', 'נסו לרענן את הדף בעוד רגע.'],
             switchTo: 'English',
+            share: 'שיתוף',
+            shareDeal: 'שתפו את הדיל',
+            sharedWithYou: 'שיתפו איתכם',
+            copyLink: 'העתקת קישור',
+            copied: 'הקישור הועתק',
         },
     };
     const CATEGORY_HE = {
@@ -61,6 +71,8 @@
         'Pet Supplies': 'מוצרים לחיות מחמד', 'Automotive': 'רכב', 'Garden': 'גינה', 'Other': 'אחר',
     };
 
+    const params = new URLSearchParams(location.search);
+    if (params.get('lang') === 'he' || params.get('lang') === 'en') localStorage.setItem('lang', params.get('lang'));
     let lang = localStorage.getItem('lang') || (/^(he|iw)\b/i.test(navigator.language) ? 'he' : 'en');
     const t = (key) => STRINGS[lang][key];
     const catName = (c) => (lang === 'he' && CATEGORY_HE[c]) || c;
@@ -93,7 +105,53 @@
     $('lang').addEventListener('click', () => {
         lang = lang === 'he' ? 'en' : 'he';
         localStorage.setItem('lang', lang);
-        applyLang();
+        // ---------- sharing ----------
+
+    const sharebox = $('sharebox');
+    let sharing = null;
+
+    async function shareDeal(p) {
+        const url = shareLink(p.id, lang);
+        const title = titleOf(p);
+        // phones: the system share sheet (WhatsApp, Instagram, Messages, …)
+        if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+            try { await navigator.share({ title, text: [title, p.price].filter(Boolean).join(' · '), url }); return; }
+            catch (e) { if (e.name === 'AbortError') return; }
+        }
+        sharing = p;
+        const text = encodeURIComponent(`${title}${p.price ? ` · ${p.price}` : ''}\n${url}`);
+        $('share-img').innerHTML = p.image ? `<img src="${esc(p.image)}" alt="" referrerpolicy="no-referrer">` : '';
+        $('share-name').textContent = title;
+        $('share-wa').href = `https://wa.me/?text=${text}`;
+        $('share-tg').href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`;
+        $('share-fb').href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
+        $('share-copy-label').textContent = t('copyLink');
+        sharebox.showModal();
+    }
+
+    $('share-copy').addEventListener('click', async () => {
+        const url = shareLink(sharing.id, lang);
+        try { await navigator.clipboard.writeText(url); }
+        catch { prompt(t('copyLink'), url); return; }
+        $('share-copy-label').textContent = t('copied');
+    });
+    $('share-close').addEventListener('click', () => sharebox.close());
+    sharebox.addEventListener('click', (e) => { if (e.target === sharebox) sharebox.close(); });
+    $('lucky-share').addEventListener('click', () => { if (lastPick) shareDeal(lastPick); });
+
+    // a shared link (/d/<id>) lands here as /?deal=<id>: show that deal straight away
+    function openSharedDeal() {
+        const p = state.products.find(x => x.id === params.get('deal'));
+        history.replaceState(null, '', location.pathname);
+        if (!p) return;
+        lastPick = p;
+        showInLucky(p);
+        $('lucky-go').href = goUrl(p);
+        $('lucky-label').textContent = t('sharedWithYou');
+        lucky.showModal();
+    }
+
+    applyLang();
         renderChips();
         renderGrid();
         if (lastPick && !spinning) { showInLucky(lastPick); $('lucky-label').textContent = pickLabel(); }
@@ -131,6 +189,7 @@
                         ? `<img src="${esc(p.image)}" alt="${esc(titleOf(p))}" loading="lazy" referrerpolicy="no-referrer">`
                         : `<div class="noimg">${icon('image')}</div>`}
                     <span class="card-num">${String(i + 1).padStart(2, '0')}</span>
+                    <span class="share-btn" role="button" tabindex="0" data-share="${esc(p.id)}" title="${t('share')}" aria-label="${t('share')}">${icon('share')}</span>
                 </div>
                 <div class="card-cat">${esc(catName(p.category))}</div>
                 <h3 class="card-title">${esc(titleOf(p))}</h3>
@@ -140,6 +199,18 @@
                 </div>
             </a>`).join('');
     }
+
+    // share buttons sit on the card link, so keep their clicks from opening the product
+    const shareFromCard = (e) => {
+        const btn = e.target.closest('[data-share]');
+        if (!btn || (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const p = state.products.find(x => x.id === btn.dataset.share);
+        if (p) shareDeal(p);
+    };
+    $('grid').addEventListener('click', shareFromCard);
+    $('grid').addEventListener('keydown', shareFromCard);
 
     $('chips').addEventListener('click', (e) => {
         const btn = e.target.closest('.chip');
@@ -208,6 +279,52 @@
     $('lucky-close').addEventListener('click', () => lucky.close());
     lucky.addEventListener('click', (e) => { if (e.target === lucky) lucky.close(); });
 
+    // ---------- sharing ----------
+
+    const sharebox = $('sharebox');
+    let sharing = null;
+
+    async function shareDeal(p) {
+        const url = shareLink(p.id, lang);
+        const title = titleOf(p);
+        // phones: the system share sheet (WhatsApp, Instagram, Messages, …)
+        if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+            try { await navigator.share({ title, text: [title, p.price].filter(Boolean).join(' · '), url }); return; }
+            catch (e) { if (e.name === 'AbortError') return; }
+        }
+        sharing = p;
+        const text = encodeURIComponent(`${title}${p.price ? ` · ${p.price}` : ''}\n${url}`);
+        $('share-img').innerHTML = p.image ? `<img src="${esc(p.image)}" alt="" referrerpolicy="no-referrer">` : '';
+        $('share-name').textContent = title;
+        $('share-wa').href = `https://wa.me/?text=${text}`;
+        $('share-tg').href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`;
+        $('share-fb').href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
+        $('share-copy-label').textContent = t('copyLink');
+        sharebox.showModal();
+    }
+
+    $('share-copy').addEventListener('click', async () => {
+        const url = shareLink(sharing.id, lang);
+        try { await navigator.clipboard.writeText(url); }
+        catch { prompt(t('copyLink'), url); return; }
+        $('share-copy-label').textContent = t('copied');
+    });
+    $('share-close').addEventListener('click', () => sharebox.close());
+    sharebox.addEventListener('click', (e) => { if (e.target === sharebox) sharebox.close(); });
+    $('lucky-share').addEventListener('click', () => { if (lastPick) shareDeal(lastPick); });
+
+    // a shared link (/d/<id>) lands here as /?deal=<id>: show that deal straight away
+    function openSharedDeal() {
+        const p = state.products.find(x => x.id === params.get('deal'));
+        history.replaceState(null, '', location.pathname);
+        if (!p) return;
+        lastPick = p;
+        showInLucky(p);
+        $('lucky-go').href = goUrl(p);
+        $('lucky-label').textContent = t('sharedWithYou');
+        lucky.showModal();
+    }
+
     applyLang();
 
     api('list').then(({ products }) => {
@@ -217,6 +334,7 @@
         renderChips();
         renderGrid();
         $('surprise').disabled = !products.length;
+        if (params.get('deal')) openSharedDeal();
     }).catch(() => {
         const [h, sub] = t('loadFailed');
         $('grid').innerHTML = `<div class="empty"><h2>${h}</h2><p>${sub}</p></div>`;
