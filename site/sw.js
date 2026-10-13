@@ -1,7 +1,7 @@
 // Lets the site install as an app and open without a connection.
 // Always tries the network first so deals and prices are never stale.
-const CACHE = 'alidealer-v1';
-const SHELL = ['/', '/offline.html', '/styles.css?v=18', '/config.js?v=18', '/store.js?v=19', '/icon-192.png', '/cart.png'];
+const CACHE = 'alidealer-v2';
+const SHELL = ['/', '/offline', '/styles.css?v=18', '/config.js?v=18', '/store.js?v=19', '/icon-192.png', '/cart.png'];
 
 self.addEventListener('install', (e) => {
     e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -21,5 +21,5 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(req).then(res => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
         return res;
-    }).catch(async () => (await caches.match(req)) || (req.mode === 'navigate' ? caches.match('/offline.html') : Response.error())));
+    }).catch(async () => (await caches.match(req)) || (req.mode === 'navigate' ? caches.match('/offline') : Response.error())));
 });
