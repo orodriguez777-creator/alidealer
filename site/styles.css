@@ -124,6 +124,7 @@ button, input, select { font: inherit; color: inherit; }
     cursor: pointer; transition: background .15s;
 }
 .lang:hover { background: rgba(255,255,255,.25); }
+a.lang { text-decoration: none; }
 .lang .icon { width: 16px; height: 16px; }
 .lang[lang="he"] { font-family: 'Rubik', sans-serif; }
 
@@ -296,6 +297,38 @@ footer {
     color: var(--ink-soft);
     line-height: 1.6;
     display: flex; justify-content: space-between; gap: 24px;
+}
+
+/* ---------- deal & category pages (built by scripts/build-pages.mjs) ---------- */
+.crumbs { display: flex; flex-wrap: wrap; gap: 8px; padding: 18px 0; font-size: 14px; color: var(--ink-soft); }
+.crumbs a { text-decoration: none; }
+.crumbs a:hover { color: var(--accent); text-decoration: underline; }
+.crumbs .sep { opacity: .5; }
+.crumbs [aria-current] { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+.deal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; padding: 12px 0 48px; }
+.deal-img { aspect-ratio: 1; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.deal-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.deal-info .card-cat { display: inline-block; margin-top: 0; text-decoration: none; }
+.deal-info h1 { font-family: var(--display); font-weight: 600; font-size: clamp(28px, 3.4vw, 44px); line-height: 1.1; letter-spacing: -.01em; margin: 10px 0 18px; }
+.deal-price { font-size: 34px; margin-bottom: 24px; }
+.deal-go { padding: 15px 28px; font-size: 17px; text-decoration: none; }
+html[lang="he"] .deal-go .icon { transform: scaleX(-1); }
+.deal-note { margin-top: 16px; font-size: 13px; color: var(--ink-soft); line-height: 1.5; max-width: 46ch; }
+.related, .cat-head { border-top: 1px solid var(--line); padding-top: 32px; }
+.related h2, .cat-nav h2 { font-family: var(--display); font-size: 26px; letter-spacing: -.01em; }
+.related .grid { padding-top: 24px; }
+.cat-head { border-top: 0; padding-top: 6px; }
+.cat-head h1 { font-family: var(--display); font-weight: 600; font-size: clamp(30px, 4vw, 52px); line-height: 1.05; letter-spacing: -.01em; }
+.cat-head p { margin-top: 10px; color: var(--ink-soft); font-size: 16px; }
+.cat-head + .grid { padding-top: 28px; }
+.cat-nav { border-top: 1px solid var(--line); padding: 28px 0 32px; }
+.cat-nav h2 { font-size: 18px; margin-bottom: 14px; }
+.cat-nav ul, .cat-links { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+.cat-nav a { display: inline-block; border: 1px solid var(--line); background: #fff; border-radius: 100px; padding: 7px 14px; font-size: 14px; text-decoration: none; }
+.cat-nav a:hover { border-color: var(--orange); color: var(--accent); }
+@media (max-width: 860px) {
+    .deal { grid-template-columns: 1fr; gap: 24px; }
+    .deal-img { max-width: 520px; }
 }
 
 /* ---------- admin ---------- */

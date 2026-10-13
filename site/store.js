@@ -26,6 +26,7 @@
             noItems: ['First finds coming soon', 'Check back shortly.'],
             loadFailed: ['Couldn\'t load finds', 'Please refresh in a moment.'],
             switchTo: 'עברית',
+            browse: 'Browse by category',
             share: 'Share',
             shareDeal: 'Share this deal',
             sharedWithYou: 'Shared with you',
@@ -53,6 +54,7 @@
             noItems: ['המוצרים הראשונים יגיעו בקרוב', 'בדקו שוב בקרוב.'],
             loadFailed: ['לא הצלחנו לטעון את המוצרים', 'נסו לרענן את הדף בעוד רגע.'],
             switchTo: 'English',
+            browse: 'קטגוריות',
             share: 'שיתוף',
             shareDeal: 'שתפו את הדיל',
             sharedWithYou: 'שיתפו איתכם',
@@ -92,6 +94,12 @@
         $('tagline').textContent = t('tagline');
         $('lang-label').textContent = t('switchTo');
         $('lang').lang = he ? 'en' : 'he';
+        // category pages exist in both languages: /category/… and /he/category/…
+        document.querySelectorAll('#cat-links a').forEach(a => {
+            const path = a.getAttribute('href').replace(/^\/he\//, '/');
+            a.href = he ? `/he${path}` : path;
+            a.textContent = catName(a.dataset.cat);
+        });
         renderUpdated();
     }
 
