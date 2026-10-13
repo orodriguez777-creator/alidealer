@@ -347,6 +347,12 @@ async function fetchViaAffiliateApi(itemId, debug) {
         const data = await res.json();
         const p = data.aliexpress_affiliate_productdetail_get_response?.resp_result?.result?.products?.product?.[0];
         if (!p) { console.error('[affiliate-api]', JSON.stringify(data).slice(0, 300)); return null; }
+        if (debug === 'sku') {
+            const q = { app_key: key, method: 'aliexpress.affiliate.product.sku.detail.get', sign_method: 'sha256', timestamp: String(Date.now()), product_id: itemId, ship_to_country: 'IL', target_currency: 'USD', target_language: 'EN', need_deliver_info: 'No' };
+            q.sign = createHmac('sha256', secret).update(Object.keys(q).sort().map(k => k + q[k]).join('')).digest('hex').toUpperCase();
+            const r = await fetch('https://api-sg.aliexpress.com/sync', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' }, body: new URLSearchParams(q), signal: AbortSignal.timeout(8000) });
+            return JSON.stringify(await r.json()).slice(0, 6000);
+        }
         if (debug) return Object.fromEntries(Object.entries(p).filter(([k]) => /price|discount|currency|promo_code|sku/i.test(k)));
         const amount = p.target_sale_price || p.sale_price;
         return {
@@ -563,7 +569,7 @@ export const handler = async (event) => {
         }
 
         // TEMPORARY: compare the affiliate API's price fields with the portal (remove after)
-        if (body.action === 'pricecheck-7f3k9q') return json(Object.fromEntries(await Promise.all(String(body.ids).split(',').slice(0, 5).map(async id => [id, await fetchViaAffiliateApi(id, true)]))));
+        if (body.action === 'pricecheck-7f3k9q') return json(Object.fromEntries(await Promise.all(String(body.ids).split(',').slice(0, 5).map(async id => [id, await fetchViaAffiliateApi(id, body.mode || true)]))));
 
         if (!isAdmin(event)) return json({ error: 'Unauthorized' }, 401);
 
