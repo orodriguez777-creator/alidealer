@@ -1732,4 +1732,16 @@
     <xhtml:link rel="alternate" hreflang="en" href="https://alidealer.com/category/jewelry-and-watches"/>
     <xhtml:link rel="alternate" hreflang="he" href="https://alidealer.com/he/category/jewelry-and-watches"/>
   </url>
+  <url>
+    <loc>https://alidealer.com/privacy</loc>
+    <lastmod>2026-10-13</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://alidealer.com/privacy"/>
+    <xhtml:link rel="alternate" hreflang="he" href="https://alidealer.com/he/privacy"/>
+  </url>
+  <url>
+    <loc>https://alidealer.com/he/privacy</loc>
+    <lastmod>2026-10-13</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://alidealer.com/privacy"/>
+    <xhtml:link rel="alternate" hreflang="he" href="https://alidealer.com/he/privacy"/>
+  </url>
 </urlset>

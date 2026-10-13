@@ -321,6 +321,15 @@ html[lang="he"] .deal-go .icon { transform: scaleX(-1); }
 .cat-head h1 { font-family: var(--display); font-weight: 600; font-size: clamp(30px, 4vw, 52px); line-height: 1.05; letter-spacing: -.01em; }
 .cat-head p { margin-top: 10px; color: var(--ink-soft); font-size: 16px; }
 .cat-head + .grid { padding-top: 28px; }
+.legal { max-width: 72ch; padding: 6px 0 48px; line-height: 1.65; font-size: 16px; }
+.legal h1 { font-family: var(--display); font-weight: 600; font-size: clamp(30px, 4vw, 48px); line-height: 1.1; letter-spacing: -.01em; }
+.legal .effective { margin: 8px 0 24px; color: var(--ink-soft); font-size: 14px; }
+.legal h2 { font-family: var(--display); font-size: 22px; margin: 32px 0 8px; }
+.legal p, .legal ul { margin-bottom: 12px; }
+.legal ul { padding-inline-start: 22px; }
+.legal li { margin-bottom: 6px; }
+.legal a { color: var(--accent); }
+footer a { color: inherit; }
 .cat-nav { border-top: 1px solid var(--line); padding: 28px 0 32px; }
 .cat-nav h2 { font-size: 18px; margin-bottom: 14px; }
 .cat-nav ul, .cat-links { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }

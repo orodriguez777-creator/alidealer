@@ -32,6 +32,7 @@
             sharedWithYou: 'Shared with you',
             copyLink: 'Copy link',
             copied: 'Link copied',
+            privacy: 'Privacy policy',
         },
         he: {
             pageTitle: 'www.Alidealer.com — רק הדילים הכי טובים מ-AliExpress',
@@ -60,6 +61,7 @@
             sharedWithYou: 'שיתפו איתכם',
             copyLink: 'העתקת קישור',
             copied: 'הקישור הועתק',
+            privacy: 'מדיניות פרטיות',
         },
     };
     const CATEGORY_HE = {
@@ -94,6 +96,7 @@
         $('tagline').textContent = t('tagline');
         $('lang-label').textContent = t('switchTo');
         $('lang').lang = he ? 'en' : 'he';
+        $('privacy-link').href = he ? '/he/privacy' : '/privacy';
         // category pages exist in both languages: /category/… and /he/category/…
         document.querySelectorAll('#cat-links a').forEach(a => {
             const path = a.getAttribute('href').replace(/^\/he\//, '/');

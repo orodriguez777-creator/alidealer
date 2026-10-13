@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url';
 const SITE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'site');
 const ORIGIN = 'https://alidealer.com';
 const API = 'https://ghzfcfbdwidurfqkjaateras4m0hnndz.lambda-url.eu-central-1.on.aws/';
-const ASSET_V = 18;
+const ASSET_V = 21;
+const CONTACT = 'orodriguez777@gmail.com';
+const POLICY_DATE = { en: 'October 13, 2026', he: '13 באוקטובר 2026' };
 
 // same names the storefront shows in Hebrew mode (site/store.js)
 const CATEGORY_HE = {
@@ -37,6 +39,7 @@ const T = {
         catTitle: (c) => `${c} deals from AliExpress | www.Alidealer.com`,
         catDesc: (n, c) => `${n} hand-picked ${c} finds from AliExpress, checked and sorted by www.Alidealer.com.`,
         disclosure: 'Affiliate disclosure: links on this site are AliExpress affiliate links. If you buy through them we may earn a small commission, at no extra cost to you.',
+        privacy: 'Privacy policy',
     },
     he: {
         home: 'דף הבית', slogan: 'רק הדילים הכי טובים', switchTo: 'English', switchLang: 'en',
@@ -49,6 +52,7 @@ const T = {
         catTitle: (c) => `דילים של ${c} מ-AliExpress | www.Alidealer.com`,
         catDesc: (n, c) => `${n} מוצרי ${c} נבחרים מ-AliExpress, שנבדקו ומוינו בשבילכם ב-www.Alidealer.com.`,
         disclosure: 'גילוי נאות: הקישורים באתר הם קישורי שותפים של AliExpress. אם תקנו דרכם ייתכן שנקבל עמלה קטנה, ללא כל עלות נוספת עבורכם.',
+        privacy: 'מדיניות פרטיות',
     },
 };
 
@@ -143,7 +147,7 @@ ${cats.map(c => `                <li><a href="${catPath(c, lang)}">${esc(catName
 
         <footer>
             <span>${t.disclosure}</span>
-            <span>© ${new Date().getFullYear()} www.Alidealer.com</span>
+            <span>© ${new Date().getFullYear()} www.Alidealer.com · <a href="${prefix(lang)}/privacy">${t.privacy}</a></span>
         </footer>
     </div>
 </body>
@@ -249,6 +253,98 @@ function categoryPage(c, lang, items, cats) {
     });
 }
 
+// Privacy policy (also the policy URL for the Google Play listing). Keep it in
+// step with what the site and the app actually do.
+const mail = `<a href="mailto:${CONTACT}">${CONTACT}</a>`;
+const POLICY = {
+    en: {
+        title: 'Privacy policy',
+        effective: 'Effective ',
+        intro: `This policy explains what information www.Alidealer.com (the website at alidealer.com and the www.Alidealer.com Android app, together "the service") collects, how it is used, and the choices you have. In short: we do not ask who you are, we do not use advertising or analytics trackers, and we do not sell or share personal information.`,
+        sections: [
+            ['Who we are', `www.Alidealer.com is a deals site run by an individual. It lists hand-picked products from AliExpress and links to them. For any privacy question, contact ${mail}.`],
+            ['Information we collect', `<ul>
+                <li><strong>No account, no sign-up.</strong> You can use the whole service without giving us your name, email, phone number or any other personal details.</li>
+                <li><strong>Deal clicks.</strong> When you tap "See on AliExpress", we count that the deal was clicked and when. We do not record your IP address, device, location or any identifier with that count, so it cannot be linked to you. Clicks from search engine robots are not counted. Click counts are used only to see which deals are popular.</li>
+                <li><strong>Technical logs.</strong> The service is hosted on Amazon Web Services (AWS) in the European Union. Like any web server, AWS may briefly keep standard technical logs (such as IP address, browser type and the page requested) to deliver pages and protect against abuse. We do not use these logs to identify or profile visitors.</li>
+            </ul>`],
+            ['Information stored on your device', `<ul>
+                <li><strong>Language choice.</strong> If you switch between English and Hebrew, that choice is saved in your browser's local storage so the site remembers it. It never leaves your device.</li>
+                <li><strong>Offline files.</strong> The app and the installed website keep a copy of the site's own pages and images on your device so they open faster and show a page when you are offline.</li>
+                <li><strong>No cookies from us.</strong> The service itself does not set cookies and does not use advertising or analytics tools.</li>
+            </ul>`],
+            ['Third-party services', `<p>Some content is loaded from other companies, which receive your IP address and browser details when your device fetches it:</p>
+            <ul>
+                <li><strong>Google Fonts</strong> (fonts.googleapis.com) for the text fonts. See the <a href="https://policies.google.com/privacy" rel="noopener" target="_blank">Google privacy policy</a>.</li>
+                <li><strong>AliExpress</strong> image servers for product photos.</li>
+            </ul>
+            <p>When you share a deal using the WhatsApp, Telegram or Facebook buttons, or your phone's share menu, the chosen service opens and its own privacy policy applies.</p>`],
+            ['Affiliate links and AliExpress', `<p>Links to products are AliExpress affiliate links. When you follow one, you leave our service and go to AliExpress, which may set its own cookies to record that you came from us, so that we may earn a small commission if you buy. This costs you nothing extra. We do not receive your name, address, payment details or order contents from AliExpress; we only see commission totals. Your use of AliExpress is covered by the <a href="https://www.aliexpress.com/p/privacy-policy/index.html" rel="noopener" target="_blank">AliExpress privacy policy</a>.</p>`],
+            ['How we use and share information', `We use the limited information above only to run the service, keep it secure and see which deals are popular. We do not sell, rent or trade personal information, and we do not share it with anyone except the hosting and service providers named above, or where the law requires it.`],
+            ['Data retention', `Daily click counts are kept for 30 days, plus an overall count per deal. Neither contains any personal information. Your language choice and offline files stay on your device until you clear the site's data or uninstall the app.`],
+            ['Security', `All traffic to and from the service is encrypted with HTTPS. Because we collect almost no personal information, there is very little that could be exposed.`],
+            ['Children', `The service is not directed at children under 13, and we do not knowingly collect personal information from children.`],
+            ['Your rights', `Depending on where you live (for example under the Israeli Privacy Protection Law or the EU GDPR), you may have the right to ask what information we hold about you, to correct it or to delete it. Since we do not keep personal information linked to you, there is usually nothing to return or delete, but you are welcome to write to ${mail} and we will reply within 30 days.`],
+            ['Changes to this policy', `If this policy changes, the new version will be posted on this page with a new effective date.`],
+            ['Contact', `Questions about this policy or your privacy: ${mail}.`],
+        ],
+    },
+    he: {
+        title: 'מדיניות פרטיות',
+        effective: 'בתוקף מ-',
+        intro: `מדיניות זו מסבירה איזה מידע אוסף www.Alidealer.com (האתר בכתובת alidealer.com ואפליקציית www.Alidealer.com לאנדרואיד, ביחד "השירות"), איך משתמשים בו ומה האפשרויות שלכם. בקצרה: אנחנו לא שואלים מי אתם, לא משתמשים בכלי מעקב של פרסום או סטטיסטיקה, ולא מוכרים או משתפים מידע אישי.`,
+        sections: [
+            ['מי אנחנו', `www.Alidealer.com הוא אתר דילים שמופעל על ידי אדם פרטי. האתר מציג מוצרים נבחרים מ-AliExpress ומקשר אליהם. לכל שאלה בנושא פרטיות אפשר לפנות אל ${mail}.`],
+            ['איזה מידע אנחנו אוספים', `<ul>
+                <li><strong>בלי חשבון ובלי הרשמה.</strong> אפשר להשתמש בכל השירות בלי למסור לנו שם, אימייל, מספר טלפון או כל פרט אישי אחר.</li>
+                <li><strong>לחיצות על דילים.</strong> כשלוחצים על "לצפייה ב-AliExpress", אנחנו סופרים שהדיל נלחץ ומתי. אנחנו לא שומרים עם הספירה כתובת IP, סוג מכשיר, מיקום או כל מזהה אחר, כך שאי אפשר לקשר אותה אליכם. לחיצות של רובוטים של מנועי חיפוש לא נספרות. הספירה משמשת רק כדי לדעת אילו דילים פופולריים.</li>
+                <li><strong>יומני שרת טכניים.</strong> השירות מאוחסן ב-Amazon Web Services (AWS) באיחוד האירופי. כמו בכל שרת אינטרנט, AWS עשויה לשמור לזמן קצר יומנים טכניים רגילים (כמו כתובת IP, סוג הדפדפן והדף שנטען) כדי להציג את הדפים ולהגן מפני שימוש לרעה. אנחנו לא משתמשים ביומנים האלה כדי לזהות גולשים או לבנות עליהם פרופיל.</li>
+            </ul>`],
+            ['מידע שנשמר במכשיר שלכם', `<ul>
+                <li><strong>בחירת שפה.</strong> אם עברתם בין עברית לאנגלית, הבחירה נשמרת באחסון המקומי של הדפדפן כדי שהאתר יזכור אותה. היא לא יוצאת מהמכשיר שלכם.</li>
+                <li><strong>קבצים לשימוש בלי אינטרנט.</strong> האפליקציה והאתר המותקן שומרים במכשיר עותק של הדפים והתמונות של האתר עצמו, כדי שייפתחו מהר יותר ויציגו דף גם כשאין חיבור.</li>
+                <li><strong>אין עוגיות (Cookies) שלנו.</strong> השירות עצמו לא שומר עוגיות ולא משתמש בכלי פרסום או סטטיסטיקה.</li>
+            </ul>`],
+            ['שירותים של צד שלישי', `<p>חלק מהתוכן נטען מחברות אחרות, שמקבלות את כתובת ה-IP ופרטי הדפדפן שלכם כשהמכשיר טוען אותו:</p>
+            <ul>
+                <li><strong>Google Fonts</strong> (fonts.googleapis.com) עבור הגופנים. ראו את <a href="https://policies.google.com/privacy?hl=iw" rel="noopener" target="_blank">מדיניות הפרטיות של Google</a>.</li>
+                <li>שרתי התמונות של <strong>AliExpress</strong> עבור תמונות המוצרים.</li>
+            </ul>
+            <p>כשמשתפים דיל דרך הכפתורים של WhatsApp, טלגרם או פייסבוק, או דרך תפריט השיתוף של הטלפון, נפתח השירות שבחרתם וחלה עליו מדיניות הפרטיות שלו.</p>`],
+            ['קישורי שותפים ו-AliExpress', `<p>הקישורים למוצרים הם קישורי שותפים של AliExpress. כשנכנסים לקישור, יוצאים מהשירות שלנו ועוברים ל-AliExpress, שעשויה לשמור עוגיות משלה כדי לרשום שהגעתם דרכנו, וכך נוכל לקבל עמלה קטנה אם תקנו. זה לא עולה לכם שום דבר נוסף. אנחנו לא מקבלים מ-AliExpress את השם, הכתובת, פרטי התשלום או תוכן ההזמנה שלכם, אלא רק את סכומי העמלות. השימוש ב-AliExpress כפוף ל<a href="https://www.aliexpress.com/p/privacy-policy/index.html" rel="noopener" target="_blank">מדיניות הפרטיות של AliExpress</a>.</p>`],
+            ['איך אנחנו משתמשים במידע ועם מי משתפים אותו', `אנחנו משתמשים במידע המצומצם שתואר למעלה רק כדי להפעיל את השירות, לשמור על אבטחתו ולדעת אילו דילים פופולריים. אנחנו לא מוכרים, משכירים או סוחרים במידע אישי, ולא משתפים אותו עם אף אחד מלבד ספקי האחסון והשירותים שצוינו למעלה, או כשהחוק מחייב זאת.`],
+            ['כמה זמן נשמר המידע', `ספירות הלחיצות היומיות נשמרות 30 יום, לצד ספירה כוללת לכל דיל. אף אחת מהן לא כוללת מידע אישי. בחירת השפה והקבצים לשימוש בלי אינטרנט נשארים במכשיר שלכם עד שתמחקו את נתוני האתר או תסירו את האפליקציה.`],
+            ['אבטחת מידע', `כל התעבורה אל השירות וממנו מוצפנת ב-HTTPS. מכיוון שאנחנו כמעט לא אוספים מידע אישי, אין כמעט מה שעלול להיחשף.`],
+            ['ילדים', `השירות לא מיועד לילדים מתחת לגיל 13, ואנחנו לא אוספים ביודעין מידע אישי מילדים.`],
+            ['הזכויות שלכם', `בהתאם למקום מגוריכם (למשל לפי חוק הגנת הפרטיות בישראל או תקנות ה-GDPR באיחוד האירופי), ייתכן שיש לכם זכות לבקש לעיין במידע שנשמר עליכם, לתקן אותו או למחוק אותו. מכיוון שאנחנו לא שומרים מידע אישי שמקושר אליכם, בדרך כלל אין מה להחזיר או למחוק, אבל תמיד אפשר לכתוב אל ${mail} ונחזור אליכם תוך 30 יום.`],
+            ['שינויים במדיניות', `אם המדיניות תשתנה, הגרסה החדשה תפורסם בדף הזה עם תאריך תחילה חדש.`],
+            ['יצירת קשר', `שאלות על המדיניות או על הפרטיות שלכם: ${mail}.`],
+        ],
+    },
+};
+
+function privacyPage(lang, cats) {
+    const t = T[lang];
+    const pol = POLICY[lang];
+    const path = `${prefix(lang)}/privacy`;
+    const trail = [[t.home, homePath(lang)], [pol.title]];
+    const wrapP = (html) => html.trimStart().startsWith('<') ? html : `<p>${html}</p>`;
+    const body = `${crumbs(lang, trail)}
+        <article class="legal">
+            <h1>${pol.title}</h1>
+            <p class="effective">${pol.effective}${POLICY_DATE[lang]}</p>
+            <p>${pol.intro}</p>
+${pol.sections.map(([h, html]) => `            <h2>${h}</h2>\n            ${wrapP(html)}`).join('\n')}
+        </article>`;
+    return layout({
+        lang, path, altPath: `${prefix(lang === 'he' ? 'en' : 'he')}/privacy`, cats,
+        title: `${pol.title} | www.Alidealer.com`,
+        description: pol.intro.split('. ')[0] + '.',
+        jsonLd: [breadcrumbLd(trail)],
+        body,
+    });
+}
+
 async function write(rel, content) {
     const file = join(SITE_DIR, rel);
     await mkdir(dirname(file), { recursive: true });
@@ -277,6 +373,11 @@ for (const lang of ['en', 'he']) {
         await write(`${catPath(c, lang).slice(1)}.html`, categoryPage(c, lang, items, cats));
         urls.push({ loc: catPath(c, lang), en: catPath(c, 'en'), he: catPath(c, 'he'), lastmod: items.map(p => p.updatedAt || p.createdAt).sort().pop() });
     }
+}
+
+for (const lang of ['en', 'he']) {
+    await write(`${prefix(lang).slice(1)}${lang === 'he' ? '/' : ''}privacy.html`, privacyPage(lang, cats));
+    urls.push({ loc: `${prefix(lang)}/privacy`, en: '/privacy', he: '/he/privacy', lastmod: '2026-10-13' });
 }
 
 await write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>
