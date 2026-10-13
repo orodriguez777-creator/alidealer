@@ -362,7 +362,7 @@ async function fetchViaAffiliateApi(itemId, debug) {
             const r = await fetch('https://api-sg.aliexpress.com/sync', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' }, body: new URLSearchParams(q), signal: AbortSignal.timeout(8000) });
             return JSON.stringify(await r.json()).slice(0, 6000);
         }
-        if (debug) return Object.fromEntries(Object.entries(p).filter(([k]) => /price|discount|currency|promo_code|sku/i.test(k)));
+        if (debug) return Object.fromEntries(Object.entries(p).filter(([k]) => /price|discount|currency|promo_code|sku|url/i.test(k)));
         const amount = p.target_sale_price || p.sale_price;
         return {
             rawTitle: cleanTitle(p.product_title),
