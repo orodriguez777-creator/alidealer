@@ -336,7 +336,7 @@ async function fetchViaAffiliateApi(itemId, debug) {
             // prices differ per country; the owner shops from Israel and sees Israel prices in USD
             country: 'IL',
         };
-        if (debug && typeof debug === 'object') { Object.assign(params, debug); for (const k in params) if (params[k] === null) delete params[k]; }
+        if (debug && typeof debug === 'object' && !debug.search) { Object.assign(params, debug); for (const k in params) if (params[k] === null) delete params[k]; }
         const base = Object.keys(params).sort().map(k => k + params[k]).join('');
         params.sign = createHmac('sha256', secret).update(base).digest('hex').toUpperCase();
         const res = await fetch('https://api-sg.aliexpress.com/sync', {
@@ -347,7 +347,15 @@ async function fetchViaAffiliateApi(itemId, debug) {
         });
         const data = await res.json();
         const p = data.aliexpress_affiliate_productdetail_get_response?.resp_result?.result?.products?.product?.[0];
-        if (!p) { console.error('[affiliate-api]', JSON.stringify(data).slice(0, 300)); return null; }
+        if (!p && !debug?.search) { console.error('[affiliate-api]', JSON.stringify(data).slice(0, 300)); return null; }
+        if (debug?.search) {
+            const q = { app_key: key, method: 'aliexpress.affiliate.product.query', sign_method: 'sha256', timestamp: String(Date.now()), keywords: debug.search, ship_to_country: 'IL', target_currency: 'USD', target_language: 'EN', page_size: '50' };
+            q.sign = createHmac('sha256', secret).update(Object.keys(q).sort().map(k => k + q[k]).join('')).digest('hex').toUpperCase();
+            const r = await (await fetch('https://api-sg.aliexpress.com/sync', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' }, body: new URLSearchParams(q), signal: AbortSignal.timeout(8000) })).json();
+            const list = r.aliexpress_affiliate_product_query_response?.resp_result?.result?.products?.product || [];
+            const hit = list.find(x => String(x.product_id) === String(itemId));
+            return hit ? Object.fromEntries(Object.entries(hit).filter(([k]) => /price|discount|promo|sku/i.test(k))) : { found: list.length, err: JSON.stringify(r).slice(0, 300) };
+        }
         if (debug === 'sku') {
             const q = { app_key: key, method: 'aliexpress.affiliate.product.sku.detail.get', sign_method: 'sha256', timestamp: String(Date.now()), product_id: itemId, ship_to_country: 'IL', target_currency: 'USD', target_language: 'EN', need_deliver_info: 'No' };
             q.sign = createHmac('sha256', secret).update(Object.keys(q).sort().map(k => k + q[k]).join('')).digest('hex').toUpperCase();
