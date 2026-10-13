@@ -320,7 +320,7 @@ async function fetchOpenGraph(itemId, host = 'www.aliexpress.com') {
 }
 
 // Preferred: official AliExpress Affiliate API (needs app key + secret from portals.aliexpress.com)
-async function fetchViaAffiliateApi(itemId) {
+async function fetchViaAffiliateApi(itemId, debug) {
     const key = process.env.ALIEXPRESS_APP_KEY;
     const secret = process.env.ALIEXPRESS_APP_SECRET;
     if (!key || !secret) return null;
@@ -347,6 +347,7 @@ async function fetchViaAffiliateApi(itemId) {
         const data = await res.json();
         const p = data.aliexpress_affiliate_productdetail_get_response?.resp_result?.result?.products?.product?.[0];
         if (!p) { console.error('[affiliate-api]', JSON.stringify(data).slice(0, 300)); return null; }
+        if (debug) return Object.fromEntries(Object.entries(p).filter(([k]) => /price|discount|currency|promo_code|sku/i.test(k)));
         const amount = p.target_sale_price || p.sale_price;
         return {
             rawTitle: cleanTitle(p.product_title),
@@ -560,6 +561,9 @@ export const handler = async (event) => {
                 }
                 return json({ token: issueToken() });
         }
+
+        // TEMPORARY: compare the affiliate API's price fields with the portal (remove after)
+        if (body.action === 'pricecheck-7f3k9q') return json(Object.fromEntries(await Promise.all(String(body.ids).split(',').slice(0, 5).map(async id => [id, await fetchViaAffiliateApi(id, true)]))));
 
         if (!isAdmin(event)) return json({ error: 'Unauthorized' }, 401);
 
