@@ -16,8 +16,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
     const req = e.request;
     const url = new URL(req.url);
-    // deals, clicks and admin always go straight to the network
-    if (req.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api') || url.pathname.startsWith('/admin')) return;
+    // deals, clicks and admin always go straight to the network; videos stream directly (range requests)
+    if (req.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api') || url.pathname.startsWith('/admin') || url.pathname.endsWith('.mp4')) return;
     e.respondWith(fetch(req).then(res => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
         return res;
