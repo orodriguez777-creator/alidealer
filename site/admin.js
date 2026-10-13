@@ -69,7 +69,8 @@
     }
 
     function resetForm() {
-        $('form').reset();
+        // the "Clear" button's id="reset" shadows form.reset, so call the real one
+        HTMLFormElement.prototype.reset.call($('form'));
         $('id').value = '';
         $('itemId').value = '';
         $('raw').classList.add('hidden');
@@ -152,6 +153,140 @@
         } finally {
             busy($('save'), false);
         }
+    });
+
+    // ---------- several links at once ----------
+
+    const ALI_LINK = /^https?:\/\/([a-z0-9-]+\.)*aliexpress\.(com|us|ru)\b/i;
+    let bulkItems = [];
+    let bulkRunning = false;
+
+    function setMode(mode) {
+        $('mode').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+        $('form').classList.toggle('hidden', mode !== 'one');
+        $('bulk').classList.toggle('hidden', mode !== 'bulk');
+        note($('msg'), '');
+    }
+    $('mode').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-mode]');
+        if (b && !bulkRunning) setMode(b.dataset.mode);
+    });
+
+    // Pull every AliExpress link out of whatever was pasted (one per line, or mixed with text)
+    function bulkLinks() {
+        const found = ($('bulk-urls').value.match(/https?:\/\/[^\s<>"']+/g) || [])
+            .map(u => u.replace(/[),.;!?]+$/, ''))
+            .filter(u => ALI_LINK.test(u));
+        return [...new Set(found)];
+    }
+
+    function bulkCount() {
+        const n = bulkLinks().length;
+        $('bulk-count').textContent = n ? `${n} link${n === 1 ? '' : 's'} found` : 'Paste links copied from AliExpress, a chat or a spreadsheet.';
+        $('bulk-add').disabled = !n || bulkRunning;
+        $('bulk-add').textContent = n > 1 ? `Add all ${n}` : 'Add';
+    }
+    $('bulk-urls').addEventListener('input', bulkCount);
+
+    const BULK_ICON = { wait: icon('clock'), busy: icon('loader', 'spin'), ok: icon('check'), dup: icon('check'), fail: icon('alert') };
+
+    function renderBulk() {
+        $('bulk-list').innerHTML = bulkItems.map((it, i) => `
+            <li class="${it.state === 'busy' ? 'wait' : it.state}">
+                <span class="bulk-state">${BULK_ICON[it.state]}</span>
+                <div>
+                    <div class="t">${esc(it.title || it.url)}</div>
+                    <div class="c">${esc(it.status)}</div>
+                </div>
+                ${it.state === 'fail' && !bulkRunning ? `<button class="btn ghost small" type="button" data-fix="${i}">Fill in by hand</button>` : ''}
+            </li>`).join('');
+    }
+
+    function bulkSet(it, state, status, title) {
+        Object.assign(it, { state, status }, title ? { title } : {});
+        renderBulk();
+    }
+
+    // Saves go one at a time: each save rewrites the whole product list
+    let saveQueue = Promise.resolve();
+    const queueSave = (fn) => (saveQueue = saveQueue.then(fn, fn));
+
+    async function bulkOne(it, known) {
+        if (known.urls.has(it.url)) return bulkSet(it, 'dup', 'Already on the site, skipped');
+        bulkSet(it, 'busy', 'Reading the product…');
+        let d;
+        try {
+            d = await call('detect', { url: it.url });
+        } catch (err) {
+            return bulkSet(it, 'fail', err.message);
+        }
+        it.detected = d;
+        if (d.itemId && known.items.has(d.itemId)) return bulkSet(it, 'dup', 'Already on the site, skipped', d.title);
+        if (d.itemId) known.items.add(d.itemId);
+        if (!d.title) return bulkSet(it, 'fail', 'AliExpress didn\'t show the title right now. Fill it in by hand or try again later.');
+        bulkSet(it, 'busy', 'Saving…', d.title);
+        await queueSave(async () => {
+            try {
+                await call('save', { url: it.url, title: d.title, category: d.category, price: d.price, image: d.image, itemId: d.itemId });
+                known.urls.add(it.url);
+                bulkSet(it, 'ok', `Added to ${d.category}${d.price ? ` · ${d.price}` : ''}`);
+            } catch (err) {
+                bulkSet(it, 'fail', err.message);
+            }
+        });
+    }
+
+    $('bulk').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const links = bulkLinks();
+        if (!links.length || bulkRunning) return;
+        bulkRunning = true;
+        $('bulk-urls').disabled = true;
+        busy($('bulk-add'), true, 'Adding');
+        note($('msg'), '');
+        bulkItems = links.map(url => ({ url, state: 'wait', status: 'Waiting…' }));
+        renderBulk();
+
+        const known = { urls: new Set(products.map(p => p.url)), items: new Set(products.map(p => p.itemId).filter(Boolean)) };
+        const queue = [...bulkItems];
+        // a few at a time so AliExpress doesn't start refusing
+        await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+            while (queue.length) await bulkOne(queue.shift(), known);
+        }));
+        await saveQueue;
+
+        bulkRunning = false;
+        busy($('bulk-add'), false);
+        $('bulk-urls').disabled = false;
+        const failed = bulkItems.filter(it => it.state === 'fail');
+        const added = bulkItems.filter(it => it.state === 'ok').length;
+        const dups = bulkItems.filter(it => it.state === 'dup').length;
+        // leave only the links that still need attention, so "Add" retries just those
+        $('bulk-urls').value = failed.map(it => it.url).join('\n');
+        bulkCount();
+        renderBulk();
+        note($('msg'), [
+            added && `${added} find${added === 1 ? '' : 's'} added, live on the site now.`,
+            dups && `${dups} already listed.`,
+            failed.length && `${failed.length} need${failed.length === 1 ? 's' : ''} attention: press Add to try again, or fill ${failed.length === 1 ? 'it' : 'them'} in by hand.`,
+        ].filter(Boolean).join(' '), failed.length ? 'warn' : 'ok');
+        if (added) await loadList().catch(() => {});
+    });
+
+    $('bulk-list').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-fix]');
+        if (!b) return;
+        const it = bulkItems[b.dataset.fix];
+        const d = it.detected || {};
+        setMode('one');
+        resetForm();
+        $('url').value = it.url;
+        $('itemId').value = d.itemId || '';
+        if (d.image) { $('image').value = d.image; setPreview(d.image); }
+        if (d.price) $('price').value = d.price;
+        note($('msg'), 'Type or paste the product title, then press Auto-categorize and Save.', 'warn');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        $('title').focus();
     });
 
     // ---------- list ----------

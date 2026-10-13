@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@400;600;700&family=Instrument+Sans:wght@400;600&family=Rubik:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=18">
+    <link rel="stylesheet" href="/styles.css?v=19">
 </head>
 <body>
     <header class="hero hero-small">
@@ -50,7 +50,22 @@
         <section id="app" class="hidden">
             <div class="admin-layout">
                 <div class="panel">
+                    <div class="seg" role="group" aria-label="How many links" id="mode">
+                        <button type="button" data-mode="one" aria-pressed="true">One link</button>
+                        <button type="button" data-mode="bulk" aria-pressed="false">Several links</button>
+                    </div>
                     <div id="msg" class="note hidden"></div>
+                    <form id="bulk" class="hidden" autocomplete="off">
+                        <div class="field">
+                            <label for="bulk-urls">AliExpress affiliate links, one per line</label>
+                            <textarea class="input bulk-urls" id="bulk-urls" rows="8" spellcheck="false" placeholder="https://s.click.aliexpress.com/e/_...&#10;https://s.click.aliexpress.com/e/_...&#10;https://s.click.aliexpress.com/e/_..."></textarea>
+                        </div>
+                        <div class="row" style="justify-content:space-between;align-items:center">
+                            <span class="bulk-count" id="bulk-count">Paste links copied from AliExpress, a chat or a spreadsheet.</span>
+                            <button class="btn" type="submit" id="bulk-add" disabled>Add all</button>
+                        </div>
+                        <ul class="bulk-list" id="bulk-list"></ul>
+                    </form>
                     <form id="form" autocomplete="off">
                         <input type="hidden" id="id">
                         <input type="hidden" id="itemId">
@@ -135,7 +150,7 @@
         </div>
     </dialog>
 
-    <script src="/config.js?v=17"></script>
-    <script src="/admin.js?v=17"></script>
+    <script src="/config.js?v=18"></script>
+    <script src="/admin.js?v=18"></script>
 </body>
 </html>

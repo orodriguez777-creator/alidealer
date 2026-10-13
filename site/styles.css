@@ -382,13 +382,28 @@ html[lang="he"] .deal-go .icon { transform: scaleX(-1); }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 100px; padding: 3px; margin-bottom: 12px; background: #fff; }
 .seg button { border: 0; background: none; padding: 6px 16px; border-radius: 100px; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink-soft); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* admin: several links at once */
+.bulk-urls { resize: vertical; font-size: 13px; line-height: 1.6; white-space: pre; overflow-x: auto; }
+.bulk-count { font-size: 13px; color: var(--ink-soft); }
+.bulk-list { list-style: none; margin-top: 16px; }
+.bulk-list:empty { display: none; }
+.bulk-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.bulk-list .t { font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-list .c { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+.bulk-list .ok .bulk-state { color: var(--ok); }
+.bulk-list .fail .bulk-state { color: #b8401c; }
+.bulk-list .fail .c { color: #8a2a12; }
+.bulk-list .wait .bulk-state, .bulk-list .dup .bulk-state { color: var(--ink-soft); }
 .post-text { resize: vertical; font-size: 15px; line-height: 1.5; margin-bottom: 12px; min-height: 180px; }
 .post-text[dir="rtl"] { font-family: 'Rubik', sans-serif; }
 
 .login { max-width: 400px; margin: 72px auto; }
 
 @media (max-width: 860px) {
-    .admin-layout { grid-template-columns: 1fr; }
+    .admin-layout { grid-template-columns: minmax(0, 1fr); }
+    .row { flex-wrap: wrap; }
+    .row > .input { flex: 1 1 180px; min-width: 0; }
     .hero-inner { grid-template-columns: 1fr; }
     .masthead-meta { text-align: start; }
     .toolbar { flex-direction: column; align-items: stretch; }
@@ -400,6 +415,8 @@ html[lang="he"] .deal-go .icon { transform: scaleX(-1); }
 /* phones: one product per row, photo runs edge to edge */
 @media (max-width: 600px) {
     .wrap { padding: 0 18px; }
+    .list li { grid-template-columns: 56px minmax(0, 1fr); }
+    .list .actions { grid-column: 2; }
     .wrap.hero-inner { padding-top: 34px; padding-bottom: 26px; gap: 18px; }
     .card-img { margin: 0 -18px; border-left: 0; border-right: 0; border-radius: 0; }
     /* compact random-find card: thumbnail beside the text, not a full-width photo */
