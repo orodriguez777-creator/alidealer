@@ -165,6 +165,7 @@
         $('mode').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
         $('form').classList.toggle('hidden', mode !== 'one');
         $('bulk').classList.toggle('hidden', mode !== 'bulk');
+        $('suggest').classList.toggle('hidden', mode !== 'suggest');
         note($('msg'), '');
     }
     $('mode').addEventListener('click', (e) => {
@@ -313,6 +314,137 @@
         $('title').focus();
     });
 
+    // ---------- suggestions (found on AliExpress every morning) ----------
+
+    let sg = { items: [], settings: {}, categories: [] };
+    const SG_NUMS = ['minOrders', 'minRating', 'minDiscount', 'maxPrice', 'perCategory'];
+
+    function sgStatus() {
+        const n = sg.items.length;
+        $('sg-badge').textContent = n || '';
+        const run = sg.lastRun;
+        const when = run ? new Date(run.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+        $('sg-status').textContent = [
+            n ? `${n} suggestion${n === 1 ? '' : 's'} waiting` : 'No suggestions waiting',
+            run && `last search ${when}, ${run.found} new`,
+        ].filter(Boolean).join(' · ');
+        if (run?.errors?.length) note($('msg'), `Last search had problems: ${run.errors.join('; ')}`, 'warn');
+    }
+
+    function renderSuggest() {
+        sgStatus();
+        $('sg-foot').classList.toggle('hidden', !sg.items.length);
+        $('sg-list').innerHTML = sg.items.length ? sg.items.map(it => `
+            <li data-item="${esc(it.itemId)}">
+                <a href="https://www.aliexpress.com/item/${esc(it.itemId)}.html" target="_blank" rel="noopener" title="View on AliExpress"><img src="${esc(it.image)}" alt="" loading="lazy" referrerpolicy="no-referrer"></a>
+                <div class="sg-fields">
+                    <input class="input" data-f="title" value="${esc(it.title)}" maxlength="160" title="${esc(it.rawTitle)}">
+                    <div class="sg-row">
+                        <input class="input" data-f="category" list="cats" value="${esc(it.category)}" maxlength="60">
+                        <input class="input" data-f="price" value="${esc(it.price)}" maxlength="30" title="Price">
+                    </div>
+                    <div class="sg-meta">${[
+                        it.was && `<s>${esc(it.was)}</s> −${esc(it.discount)}`,
+                        `${Number(it.orders).toLocaleString('en-US')} sold`,
+                        it.rating && `${esc(it.rating)} positive`,
+                        it.commission && `${esc(it.commission)} commission`,
+                        `<a href="https://www.aliexpress.com/item/${esc(it.itemId)}.html" target="_blank" rel="noopener">View on AliExpress</a>`,
+                    ].filter(Boolean).join(' · ')}</div>
+                    <div class="sg-err hidden"></div>
+                    <div class="sg-act">
+                        <button class="btn ghost small" type="button" data-sg="skip">Skip</button>
+                        <button class="btn small" type="button" data-sg="add">${icon('check')} Add</button>
+                    </div>
+                </div>
+            </li>`).join('') : `<li style="display:block;color:var(--ink-soft)">Nothing waiting. New suggestions arrive every morning, or press "Find new now".</li>`;
+    }
+
+    function renderSgForm() {
+        const st = sg.settings;
+        $('sg-cats').innerHTML = sg.categories.map(c => `<label><input type="checkbox" value="${esc(c)}" ${st.categories.includes(c) ? 'checked' : ''}> ${esc(c)}</label>`).join('');
+        SG_NUMS.forEach(k => { $(`sg-${k}`).value = st[k] ?? ''; });
+    }
+
+    function sgLoaded(d, form = true) {
+        sg = d;
+        renderSuggest();
+        if (form) renderSgForm();
+    }
+
+    async function loadSuggest() {
+        try { sgLoaded(await call('suggestions')); }
+        catch (err) { $('sg-status').textContent = `Suggestions couldn't load: ${err.message}`; }
+    }
+
+    $('sg-refresh').addEventListener('click', async () => {
+        busy($('sg-refresh'), true, 'Searching');
+        note($('msg'), '');
+        const before = sg.items.length;
+        try {
+            sgLoaded(await call('suggest-refresh'), false);
+            const n = sg.items.length - before;
+            if (!sg.lastRun?.errors?.length) note($('msg'), n > 0 ? `${n} new suggestion${n === 1 ? '' : 's'} found.` : 'Nothing new right now that matches your filters.', n > 0 ? 'ok' : 'warn');
+        } catch (err) {
+            note($('msg'), err.message);
+        } finally {
+            busy($('sg-refresh'), false);
+        }
+    });
+
+    $('sg-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        busy($('sg-save'), true, 'Saving');
+        try {
+            const settings = { categories: [...$('sg-cats').querySelectorAll('input:checked')].map(i => i.value) };
+            SG_NUMS.forEach(k => { settings[k] = $(`sg-${k}`).value; });
+            sgLoaded(await call('suggest-settings', { settings }));
+            $('sg-filters').open = false;
+            note($('msg'), 'Filters saved. They apply from the next search.', 'ok');
+        } catch (err) {
+            note($('msg'), err.message);
+        } finally {
+            busy($('sg-save'), false);
+        }
+    });
+
+    $('sg-list').addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-sg]');
+        if (!btn) return;
+        const li = btn.closest('li');
+        const itemId = li.dataset.item;
+        const val = (f) => li.querySelector(`[data-f="${f}"]`).value.trim();
+        const err = li.querySelector('.sg-err');
+        li.querySelectorAll('button').forEach(b => { b.disabled = true; });
+        try {
+            if (btn.dataset.sg === 'add') {
+                busy(btn, true, 'Adding');
+                await queueSave(() => call('suggest-add', { itemId, title: val('title'), category: val('category'), price: val('price') }));
+                note($('msg'), `Added "${val('title')}", live on the site now.`, 'ok');
+                loadList().catch(() => {});
+            } else {
+                await call('suggest-skip', { itemIds: [itemId] });
+            }
+            sg.items = sg.items.filter(i => i.itemId !== itemId);
+            li.remove();
+            sgStatus();
+            if (!sg.items.length) renderSuggest();
+        } catch (ex) {
+            busy(btn, false);
+            li.querySelectorAll('button').forEach(b => { b.disabled = false; });
+            err.textContent = ex.message;
+            err.classList.remove('hidden');
+            if (ex.status === 409 || ex.status === 404) loadSuggest();
+        }
+    });
+
+    $('sg-skip-all').addEventListener('click', async () => {
+        if (!confirm(`Skip all ${sg.items.length} suggestions? They won't be suggested again.`)) return;
+        busy($('sg-skip-all'), true, 'Skipping');
+        try { sgLoaded(await call('suggest-skip', { itemIds: sg.items.map(i => i.itemId) }), false); }
+        catch (err) { note($('msg'), err.message); }
+        finally { busy($('sg-skip-all'), false); }
+    });
+
     // ---------- list ----------
 
     const clicksOf = (p) => clicks[p.id] || { total: 0, week: 0 };
@@ -456,7 +588,7 @@
         try {
             const { categories } = await call('check');
             $('cats').innerHTML = categories.map(c => `<option value="${esc(c)}">`).join('');
-            await loadList();
+            await Promise.all([loadList(), loadSuggest()]);
         } catch { /* 401 already handled */ }
     }
 

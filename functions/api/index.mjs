@@ -3,13 +3,15 @@
  *
  * Public:  list, GET ?go=<productId> (count the click, redirect to the product page),
  *          GET ?share=[he/]<productId> (link-preview page for one deal)
- * Admin:   login, detect, save, delete, stats, post  (require ADMIN_PASSWORD-derived token)
+ * Admin:   login, detect, save, delete, stats, post, suggestions, suggest-*  (require ADMIN_PASSWORD-derived token)
+ * Daily schedule: search AliExpress for deal suggestions (see "deal suggestions")
  *
  * Products are stored as one JSON document in the project bucket
  * (data/products.json) — a single admin writes, everyone reads.
  *
  * Environment variables:
  * - ADMIN_PASSWORD  (secret, set via functions/api/.env)
+ * - ALIEXPRESS_APP_KEY, ALIEXPRESS_APP_SECRET  (secret, affiliate API)
  * - STORAGE_BUCKET, OPENKBS_API_KEY (injected)
  */
 import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
@@ -319,40 +321,44 @@ async function fetchOpenGraph(itemId, host = 'www.aliexpress.com') {
     }
 }
 
-// Preferred: official AliExpress Affiliate API (needs app key + secret from portals.aliexpress.com)
-async function fetchViaAffiliateApi(itemId) {
+// ---------- AliExpress affiliate API (app key + secret from portals.aliexpress.com) ----------
+
+// The API allows about one call per second, so calls from this container are spaced out
+let nextAliCall = 0;
+async function aliCall(method, extra) {
     const key = process.env.ALIEXPRESS_APP_KEY;
     const secret = process.env.ALIEXPRESS_APP_SECRET;
-    if (!key || !secret) return null;
-    try {
-        const params = {
-            app_key: key,
-            method: 'aliexpress.affiliate.productdetail.get',
-            sign_method: 'sha256',
-            timestamp: String(Date.now()),
-            product_ids: itemId,
-            target_currency: 'USD',
-            target_language: 'EN',
-            // prices differ per country; the owner shops from Israel and sees Israel prices in USD
-            country: 'IL',
-        };
+    if (!key || !secret) throw new Error('AliExpress API keys are not configured');
+    let data;
+    for (let attempt = 0; attempt < 4; attempt++) {
+        const wait = nextAliCall - Date.now() + (attempt ? Math.random() * 600 : 0);
+        nextAliCall = Math.max(Date.now(), nextAliCall) + 1100;
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
+        const params = { app_key: key, method, sign_method: 'sha256', timestamp: String(Date.now()), ...extra };
         const base = Object.keys(params).sort().map(k => k + params[k]).join('');
         params.sign = createHmac('sha256', secret).update(base).digest('hex').toUpperCase();
-        let data;
-        // the API allows about one call per second; adding several links at once trips it
-        for (let attempt = 0; attempt < 4; attempt++) {
-            if (attempt) await new Promise(r => setTimeout(r, 1100 + Math.random() * 600));
-            const res = await fetch('https://api-sg.aliexpress.com/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
-                body: new URLSearchParams(params),
-                signal: AbortSignal.timeout(8000),
-            });
-            data = await res.json();
-            if (data.error_response?.code !== 'ApiCallLimit') break;
-        }
-        const p = data.aliexpress_affiliate_productdetail_get_response?.resp_result?.result?.products?.product?.[0];
-        if (!p) { console.error('[affiliate-api]', JSON.stringify(data).slice(0, 300)); return null; }
+        const res = await fetch('https://api-sg.aliexpress.com/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+            body: new URLSearchParams(params),
+            signal: AbortSignal.timeout(8000),
+        });
+        data = await res.json();
+        if (data.error_response?.code !== 'ApiCallLimit') break;
+    }
+    if (data.error_response) throw new Error(`AliExpress: ${data.error_response.msg || data.error_response.code}`);
+    return data[`${method.replace(/\./g, '_')}_response`]?.resp_result;
+}
+
+// prices differ per country; the owner shops from Israel and sees Israel prices in USD
+const ALI_MARKET = { target_currency: 'USD', target_language: 'EN', country: 'IL' };
+
+// Preferred source for detect
+async function fetchViaAffiliateApi(itemId) {
+    try {
+        const r = await aliCall('aliexpress.affiliate.productdetail.get', { product_ids: itemId, ...ALI_MARKET });
+        const p = r?.result?.products?.product?.[0];
+        if (!p) { console.error('[affiliate-api]', JSON.stringify(r).slice(0, 300)); return null; }
         const amount = p.target_sale_price || p.sale_price;
         return {
             rawTitle: cleanTitle(p.product_title),
@@ -539,7 +545,188 @@ async function handleDelete({ id }) {
     return json({ deleted: products.length - next.length });
 }
 
+// ---------- deal suggestions ----------
+// Once a day (and on "Find new now") AliExpress is searched per category for
+// best-selling, well-rated, discounted products. They wait in the admin until
+// the owner adds or skips each one; nothing is published on its own.
+
+const SUGGEST_KEY = 'data/suggestions.json';
+const SUGGEST_MAX_AGE_MS = 14 * 86400000;
+
+// our category → AliExpress top-level category ids (and a keyword where there is no match)
+const ALI_CATEGORIES = {
+    'Electronics': { ids: '44' },
+    'Phone Accessories': { ids: '509,202192403' },
+    'Computers & Office': { ids: '7' },
+    'Home & Kitchen': { ids: '15,6' },
+    'Tools & Home Improvement': { ids: '1420,13' },
+    'Lighting': { ids: '39' },
+    'Women\'s Fashion': { ids: '200000345' },
+    'Men\'s Fashion': { ids: '200000343' },
+    'Shoes': { ids: '322' },
+    'Bags & Luggage': { ids: '1524' },
+    'Jewelry & Watches': { ids: '36,1511' },
+    'Beauty & Health': { ids: '66' },
+    'Sports & Outdoors': { ids: '18' },
+    'Toys & Hobbies': { ids: '26' },
+    'Baby & Kids': { ids: '1501' },
+    'Pet Supplies': { ids: '15', keywords: 'pet' },
+    'Automotive': { ids: '34' },
+    'Garden': { ids: '15', keywords: 'garden' },
+};
+
+const SUGGEST_DEFAULTS = { categories: [], minOrders: 300, minRating: 95, minDiscount: 30, maxPrice: 50, perCategory: 5 };
+
+async function loadSuggestions() {
+    try {
+        const res = await s3.send(new GetObjectCommand({ Bucket: process.env.STORAGE_BUCKET, Key: SUGGEST_KEY }));
+        return JSON.parse(await res.Body.transformToString());
+    } catch (e) {
+        if (e.name !== 'NoSuchKey') throw e;
+        // start with the categories the shop already has
+        const products = await loadProducts();
+        const categories = Object.keys(ALI_CATEGORIES).filter(c => products.some(p => p.category === c));
+        return { items: [], skipped: [], settings: { ...SUGGEST_DEFAULTS, categories }, lastRun: null };
+    }
+}
+
+async function saveSuggestions(doc) {
+    await s3.send(new PutObjectCommand({ Bucket: process.env.STORAGE_BUCKET, Key: SUGGEST_KEY, Body: JSON.stringify(doc), ContentType: 'application/json' }));
+}
+
+const pct = (s) => parseFloat(String(s || '').replace('%', '')) || 0;
+
+async function cleanTitles(raw) {
+    const out = await gemini(AI_MODEL, `Rewrite these AliExpress listing titles as clean, readable product names in English, the way a curated shop would list them.
+Max 70 characters each, no keyword stuffing, Title Case, keep brand names and key specs.
+Return JSON {"titles": [...]} with exactly ${raw.length} strings, in the same order.
+
+${JSON.stringify(raw)}`, { generationConfig: { maxOutputTokens: 4000, responseMimeType: 'application/json' } }, 30000);
+    if (!Array.isArray(out.titles) || out.titles.length !== raw.length) throw new Error('title cleanup came back incomplete');
+    return out.titles.map((t, i) => String(t || '').trim().slice(0, 120) || raw[i]);
+}
+
+async function refreshSuggestions(deadline) {
+    const [doc, products] = await Promise.all([loadSuggestions(), loadProducts()]);
+    const st = doc.settings;
+    const known = new Set([...products.map(p => p.itemId), ...doc.items.map(i => i.itemId), ...doc.skipped].filter(Boolean).map(String));
+    const found = [];
+    const errors = [];
+
+    for (const category of st.categories.filter(c => ALI_CATEGORIES[c])) {
+        if (Date.now() > deadline) { errors.push('ran out of time, some categories were not searched'); break; }
+        const { ids, keywords } = ALI_CATEGORIES[category];
+        try {
+            const r = await aliCall('aliexpress.affiliate.product.query', {
+                ...ALI_MARKET, category_ids: ids, ...(keywords && { keywords }),
+                sort: 'LAST_VOLUME_DESC', page_size: '50',
+                // a different page each day so the same best-sellers don't come back
+                page_no: String(1 + Math.floor(Math.random() * 3)),
+            });
+            const picks = (r?.result?.products?.product || []).filter(p => {
+                const id = String(p.product_id);
+                const price = parseFloat(p.target_sale_price);
+                return !known.has(id) && p.product_main_image_url && price > 0
+                    && (!st.maxPrice || price <= st.maxPrice)
+                    && (p.lastest_volume || 0) >= st.minOrders
+                    && pct(p.evaluate_rate) >= st.minRating
+                    && pct(p.discount) >= st.minDiscount;
+            }).slice(0, st.perCategory);
+            for (const p of picks) {
+                known.add(String(p.product_id));
+                found.push({
+                    itemId: String(p.product_id), category,
+                    rawTitle: cleanTitle(p.product_title), title: cleanTitle(p.product_title),
+                    image: p.product_main_image_url,
+                    price: `$${p.target_sale_price}`,
+                    was: p.target_original_price && p.target_original_price !== p.target_sale_price ? `$${p.target_original_price}` : '',
+                    discount: p.discount || '', orders: p.lastest_volume || 0, rating: p.evaluate_rate || '',
+                    commission: p.commission_rate || '',
+                    foundAt: new Date().toISOString(),
+                });
+            }
+        } catch (e) {
+            console.error('[suggest]', category, e.message);
+            errors.push(`${category}: ${e.message}`);
+        }
+    }
+
+    if (found.length) {
+        try {
+            const titles = await cleanTitles(found.map(f => f.rawTitle));
+            found.forEach((f, i) => { f.title = titles[i]; });
+        } catch (e) { console.error('[suggest-titles]', e.message); }
+    }
+
+    // re-read before writing so an add/skip made meanwhile isn't lost
+    const fresh = await loadSuggestions();
+    const cutoff = Date.now() - SUGGEST_MAX_AGE_MS;
+    const have = new Set(fresh.items.map(i => i.itemId));
+    fresh.items = [...found.filter(f => !have.has(f.itemId)), ...fresh.items.filter(i => Date.parse(i.foundAt) > cutoff)].slice(0, 300);
+    fresh.lastRun = { at: new Date().toISOString(), found: found.length, errors: errors.slice(0, 5) };
+    await saveSuggestions(fresh);
+    return fresh;
+}
+
+const suggestView = (doc) => ({ items: doc.items, settings: doc.settings, lastRun: doc.lastRun, categories: Object.keys(ALI_CATEGORIES) });
+
+async function handleSuggestSettings({ settings = {} }) {
+    const doc = await loadSuggestions();
+    const num = (v, min, max, d) => Number.isFinite(+v) && v !== '' && v !== null ? Math.min(max, Math.max(min, +v)) : d;
+    doc.settings = {
+        categories: (Array.isArray(settings.categories) ? settings.categories : []).filter(c => ALI_CATEGORIES[c]),
+        minOrders: num(settings.minOrders, 0, 1e6, SUGGEST_DEFAULTS.minOrders),
+        minRating: num(settings.minRating, 0, 100, SUGGEST_DEFAULTS.minRating),
+        minDiscount: num(settings.minDiscount, 0, 99, SUGGEST_DEFAULTS.minDiscount),
+        maxPrice: num(settings.maxPrice, 0, 1e5, 0),
+        perCategory: num(settings.perCategory, 1, 20, SUGGEST_DEFAULTS.perCategory),
+    };
+    await saveSuggestions(doc);
+    return json(suggestView(doc));
+}
+
+async function dropSuggestions(itemIds, skip) {
+    const ids = new Set(itemIds.map(String));
+    const doc = await loadSuggestions();
+    doc.items = doc.items.filter(i => !ids.has(i.itemId));
+    if (skip) doc.skipped = [...ids, ...doc.skipped.filter(id => !ids.has(id))].slice(0, 5000);
+    await saveSuggestions(doc);
+    return doc;
+}
+
+async function handleSuggestAdd(body) {
+    const itemId = String(body.itemId || '');
+    const doc = await loadSuggestions();
+    const item = doc.items.find(i => i.itemId === itemId);
+    if (!item) return json({ error: 'This suggestion is no longer in the list' }, 404);
+    if ((await loadProducts()).some(p => String(p.itemId) === itemId)) {
+        await dropSuggestions([itemId], true);
+        return json({ error: 'Already on the site' }, 409);
+    }
+    // a short affiliate link, the same kind the portal makes
+    const r = await aliCall('aliexpress.affiliate.link.generate', {
+        promotion_link_type: '0', tracking_id: 'default',
+        source_values: `https://www.aliexpress.com/item/${itemId}.html`,
+    });
+    const url = r?.result?.promotion_links?.promotion_link?.[0]?.promotion_link;
+    if (!url) return json({ error: 'AliExpress didn\'t create the affiliate link. Try again in a moment.' }, 502);
+    const saved = await handleSave({
+        url, itemId, image: item.image,
+        title: body.title || item.title,
+        category: body.category || item.category,
+        price: body.price ?? item.price,
+    });
+    if (saved.statusCode === 200) await dropSuggestions([itemId], true);
+    return saved;
+}
+
 export const handler = async (event) => {
+    if (event.source === 'schedule') {
+        const doc = await refreshSuggestions(Date.now() + 100000);
+        console.log('[suggest] daily run', JSON.stringify(doc.lastRun));
+        return { ok: true };
+    }
+
     if (event.requestContext?.http?.method === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
 
     try {
@@ -557,6 +744,8 @@ export const handler = async (event) => {
                 await fillHebrewTitles(products);
                 return json({ products, categories: CATEGORIES });
             }
+
+            case 'suggest-test-tmp': return json(suggestView(await refreshSuggestions(Date.now() + 35000)));
 
             case 'login':
                 if (!process.env.ADMIN_PASSWORD) return json({ error: 'Admin password is not configured yet' }, 503);
@@ -577,6 +766,11 @@ export const handler = async (event) => {
             case 'delete': return await handleDelete(body);
             case 'stats':  return await handleStats();
             case 'post':   return await handlePost(body);
+            case 'suggestions': return json(suggestView(await loadSuggestions()));
+            case 'suggest-refresh': return json(suggestView(await refreshSuggestions(Date.now() + 35000)));
+            case 'suggest-settings': return await handleSuggestSettings(body);
+            case 'suggest-add': return await handleSuggestAdd(body);
+            case 'suggest-skip': return json(suggestView(await dropSuggestions(Array.isArray(body.itemIds) ? body.itemIds : [], true)));
             default:       return json({ error: 'Unknown action' }, 400);
         }
     } catch (error) {

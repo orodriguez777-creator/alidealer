@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@400;600;700&family=Instrument+Sans:wght@400;600&family=Rubik:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=21">
+    <link rel="stylesheet" href="/styles.css?v=22">
 </head>
 <body>
     <header class="hero hero-small">
@@ -53,6 +53,7 @@
                     <div class="seg" role="group" aria-label="How many links" id="mode">
                         <button type="button" data-mode="one" aria-pressed="true">One link</button>
                         <button type="button" data-mode="bulk" aria-pressed="false">Several links</button>
+                        <button type="button" data-mode="suggest" aria-pressed="false">Suggestions <span class="sg-badge" id="sg-badge"></span></button>
                     </div>
                     <div id="msg" class="note hidden"></div>
                     <form id="bulk" class="hidden" autocomplete="off">
@@ -67,6 +68,32 @@
                         </div>
                         <ul class="bulk-list" id="bulk-list"></ul>
                     </form>
+                    <section id="suggest" class="hidden">
+                        <div class="row sg-head">
+                            <span class="bulk-count" id="sg-status">Loading suggestions…</span>
+                            <button class="btn ghost small" type="button" id="sg-refresh">Find new now</button>
+                        </div>
+                        <details class="sg-filters" id="sg-filters">
+                            <summary>Filters: which deals to suggest</summary>
+                            <form id="sg-form" autocomplete="off">
+                                <div class="field">
+                                    <label>Categories to search</label>
+                                    <div class="sg-cats" id="sg-cats"></div>
+                                </div>
+                                <div class="sg-nums">
+                                    <label>Sold at least <input class="input" id="sg-minOrders" type="number" min="0" step="50"></label>
+                                    <label>Positive reviews at least (%) <input class="input" id="sg-minRating" type="number" min="0" max="100"></label>
+                                    <label>Discount at least (%) <input class="input" id="sg-minDiscount" type="number" min="0" max="99"></label>
+                                    <label>Price up to ($, 0 = any) <input class="input" id="sg-maxPrice" type="number" min="0"></label>
+                                    <label>Per category each day <input class="input" id="sg-perCategory" type="number" min="1" max="20"></label>
+                                </div>
+                                <div class="row" style="justify-content:flex-end"><button class="btn small" type="submit" id="sg-save">Save filters</button></div>
+                            </form>
+                        </details>
+                        <p class="bulk-hint">New suggestions arrive every morning. Check the price on the affiliate portal and fix it here if it differs, then press Add. Nothing goes live until you add it.</p>
+                        <ul class="sg-list" id="sg-list"></ul>
+                        <div class="row hidden" id="sg-foot" style="justify-content:flex-end"><button class="btn ghost small" type="button" id="sg-skip-all">Skip all shown</button></div>
+                    </section>
                     <form id="form" autocomplete="off">
                         <input type="hidden" id="id">
                         <input type="hidden" id="itemId">
@@ -152,6 +179,6 @@
     </dialog>
 
     <script src="/config.js?v=18"></script>
-    <script src="/admin.js?v=19"></script>
+    <script src="/admin.js?v=20"></script>
 </body>
 </html>

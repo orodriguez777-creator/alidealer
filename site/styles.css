@@ -397,6 +397,27 @@ footer a { color: inherit; }
 .bulk-count { font-size: 13px; color: var(--ink-soft); }
 .bulk-hint { font-size: 13px; color: var(--ink-soft); margin-top: 6px; line-height: 1.45; }
 .bulk-hint code { font-size: 12px; background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.sg-badge:empty { display: none; }
+.sg-badge { display: inline-block; min-width: 20px; padding: 0 6px; margin-inline-start: 4px; border-radius: 100px; background: var(--orange); color: #fff; font-size: 12px; line-height: 20px; }
+.sg-head { justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.sg-filters { border: 1px solid var(--line); border-radius: var(--radius); background: #fff; padding: 10px 14px; margin-bottom: 10px; }
+.sg-filters summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.sg-filters form { margin-top: 12px; }
+.sg-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.sg-cats label { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 100px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+.sg-nums { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.sg-nums label { font-size: 12px; color: var(--ink-soft); display: grid; gap: 4px; }
+.sg-list { list-style: none; margin-top: 8px; }
+.sg-list li { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+.sg-list li > a img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.sg-list .sg-fields { display: grid; gap: 6px; }
+.sg-list .input { padding: 7px 10px; font-size: 14px; }
+.sg-list .sg-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 6px; }
+.sg-list .sg-meta { font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+.sg-list .sg-meta s { opacity: .7; }
+.sg-list .sg-meta a { color: var(--accent); }
+.sg-list .sg-act { display: flex; gap: 6px; justify-content: flex-end; }
+.sg-list .sg-err { font-size: 12px; color: #8a2a12; }
 .bulk-list { list-style: none; margin-top: 16px; }
 .bulk-list:empty { display: none; }
 .bulk-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
