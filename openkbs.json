@@ -15,5 +15,6 @@
     "rules": [
       { "from": "/d/*", "to": "/api?share=:splat", "status": 301 }
     ]
-  }
+  },
+  "notFound": "/404.html"
 }
