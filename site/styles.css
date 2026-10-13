@@ -386,6 +386,8 @@ html[lang="he"] .deal-go .icon { transform: scaleX(-1); }
 /* admin: several links at once */
 .bulk-urls { resize: vertical; font-size: 13px; line-height: 1.6; white-space: pre; overflow-x: auto; }
 .bulk-count { font-size: 13px; color: var(--ink-soft); }
+.bulk-hint { font-size: 13px; color: var(--ink-soft); margin-top: 6px; line-height: 1.45; }
+.bulk-hint code { font-size: 12px; background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .bulk-list { list-style: none; margin-top: 16px; }
 .bulk-list:empty { display: none; }
 .bulk-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }

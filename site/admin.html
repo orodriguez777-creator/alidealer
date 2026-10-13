@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@400;600;700&family=Instrument+Sans:wght@400;600&family=Rubik:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=19">
+    <link rel="stylesheet" href="/styles.css?v=20">
 </head>
 <body>
     <header class="hero hero-small">
@@ -58,7 +58,8 @@
                     <form id="bulk" class="hidden" autocomplete="off">
                         <div class="field">
                             <label for="bulk-urls">AliExpress affiliate links, one per line</label>
-                            <textarea class="input bulk-urls" id="bulk-urls" rows="8" spellcheck="false" placeholder="https://s.click.aliexpress.com/e/_...&#10;https://s.click.aliexpress.com/e/_...&#10;https://s.click.aliexpress.com/e/_..."></textarea>
+                            <textarea class="input bulk-urls" id="bulk-urls" rows="8" spellcheck="false" placeholder="https://s.click.aliexpress.com/e/_... $1.99&#10;https://s.click.aliexpress.com/e/_... $4.91&#10;https://s.click.aliexpress.com/e/_..."></textarea>
+                            <p class="bulk-hint">Tip: add the price from the affiliate portal after a link, on the same line (<code>$1.99</code> or <code>₪7.50</code>). Without it, AliExpress's regular price is used.</p>
                         </div>
                         <div class="row" style="justify-content:space-between;align-items:center">
                             <span class="bulk-count" id="bulk-count">Paste links copied from AliExpress, a chat or a spreadsheet.</span>
@@ -151,6 +152,6 @@
     </dialog>
 
     <script src="/config.js?v=18"></script>
-    <script src="/admin.js?v=18"></script>
+    <script src="/admin.js?v=19"></script>
 </body>
 </html>

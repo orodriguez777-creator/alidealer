@@ -172,17 +172,40 @@
         if (b && !bulkRunning) setMode(b.dataset.mode);
     });
 
+    // A price typed on the same line as a link wins over the detected one: the
+    // affiliate portal shows promo prices the API doesn't report.
+    const NUM = '(\\d{1,5}(?:[.,]\\d{1,2})?)';
+    const PRICE_RES = [
+        [new RegExp(`(?:US\\s?\\$|\\$|USD)\\s?${NUM}|${NUM}\\s?(?:\\$|USD)`, 'i'), '$'],
+        [new RegExp(`(?:₪|ILS|NIS)\\s?${NUM}|${NUM}\\s?(?:₪|ILS|NIS|ש"ח|שח)`, 'i'), '₪'],
+    ];
+    function linePrice(rest) {
+        for (const [re, sym] of PRICE_RES) {
+            const m = rest.match(re);
+            if (m) return sym + (m[1] || m[2]).replace(',', '.');
+        }
+        const bare = rest.match(new RegExp(`^${NUM}$`)); // just a number next to the link
+        return bare ? '$' + bare[1].replace(',', '.') : '';
+    }
+
     // Pull every AliExpress link out of whatever was pasted (one per line, or mixed with text)
     function bulkLinks() {
-        const found = ($('bulk-urls').value.match(/https?:\/\/[^\s<>"']+/g) || [])
-            .map(u => u.replace(/[),.;!?]+$/, ''))
-            .filter(u => ALI_LINK.test(u));
-        return [...new Set(found)];
+        const seen = new Map();
+        for (const line of $('bulk-urls').value.split('\n')) {
+            const urls = (line.match(/https?:\/\/[^\s<>"']+/g) || []).map(u => u.replace(/[),.;!?]+$/, '')).filter(u => ALI_LINK.test(u));
+            const price = urls.length === 1 ? linePrice(line.replace(/https?:\/\/[^\s<>"']+/g, ' ').trim()) : '';
+            urls.forEach(url => { if (!seen.has(url) || (price && !seen.get(url))) seen.set(url, price); });
+        }
+        return [...seen].map(([url, price]) => ({ url, price }));
     }
 
     function bulkCount() {
-        const n = bulkLinks().length;
-        $('bulk-count').textContent = n ? `${n} link${n === 1 ? '' : 's'} found` : 'Paste links copied from AliExpress, a chat or a spreadsheet.';
+        const links = bulkLinks();
+        const n = links.length;
+        const priced = links.filter(l => l.price).length;
+        $('bulk-count').textContent = n
+            ? `${n} link${n === 1 ? '' : 's'} found${priced ? `, ${priced === n ? 'all' : priced} with your price` : ''}`
+            : 'Paste links copied from AliExpress, a chat or a spreadsheet.';
         $('bulk-add').disabled = !n || bulkRunning;
         $('bulk-add').textContent = n > 1 ? `Add all ${n}` : 'Add';
     }
@@ -225,11 +248,12 @@
         if (d.itemId) known.items.add(d.itemId);
         if (!d.title) return bulkSet(it, 'fail', 'AliExpress didn\'t show the title right now. Fill it in by hand or try again later.');
         bulkSet(it, 'busy', 'Saving…', d.title);
+        const price = it.price || d.price || '';
         await queueSave(async () => {
             try {
-                await call('save', { url: it.url, title: d.title, category: d.category, price: d.price, image: d.image, itemId: d.itemId });
+                await call('save', { url: it.url, title: d.title, category: d.category, price, image: d.image, itemId: d.itemId });
                 known.urls.add(it.url);
-                bulkSet(it, 'ok', `Added to ${d.category}${d.price ? ` · ${d.price}` : ''}`);
+                bulkSet(it, 'ok', `Added to ${d.category}${price ? ` · ${price}` : ''}${it.price ? ' (your price)' : price ? ' (AliExpress price, check it)' : ''}`);
             } catch (err) {
                 bulkSet(it, 'fail', err.message);
             }
@@ -244,13 +268,13 @@
         $('bulk-urls').disabled = true;
         busy($('bulk-add'), true, 'Adding');
         note($('msg'), '');
-        bulkItems = links.map(url => ({ url, state: 'wait', status: 'Waiting…' }));
+        bulkItems = links.map(({ url, price }) => ({ url, price, state: 'wait', status: 'Waiting…' }));
         renderBulk();
 
         const known = { urls: new Set(products.map(p => p.url)), items: new Set(products.map(p => p.itemId).filter(Boolean)) };
         const queue = [...bulkItems];
-        // a few at a time so AliExpress doesn't start refusing
-        await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+        // two at a time: AliExpress allows about one product lookup per second
+        await Promise.all(Array.from({ length: Math.min(2, queue.length) }, async () => {
             while (queue.length) await bulkOne(queue.shift(), known);
         }));
         await saveQueue;
@@ -262,7 +286,7 @@
         const added = bulkItems.filter(it => it.state === 'ok').length;
         const dups = bulkItems.filter(it => it.state === 'dup').length;
         // leave only the links that still need attention, so "Add" retries just those
-        $('bulk-urls').value = failed.map(it => it.url).join('\n');
+        $('bulk-urls').value = failed.map(it => it.price ? `${it.url} ${it.price}` : it.url).join('\n');
         bulkCount();
         renderBulk();
         note($('msg'), [
@@ -283,7 +307,7 @@
         $('url').value = it.url;
         $('itemId').value = d.itemId || '';
         if (d.image) { $('image').value = d.image; setPreview(d.image); }
-        if (d.price) $('price').value = d.price;
+        if (it.price || d.price) $('price').value = it.price || d.price;
         note($('msg'), 'Type or paste the product title, then press Auto-categorize and Save.', 'warn');
         window.scrollTo({ top: 0, behavior: 'smooth' });
         $('title').focus();
