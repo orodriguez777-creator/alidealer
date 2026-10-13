@@ -337,6 +337,7 @@ footer {
 /* phones: one product per row, photo runs edge to edge */
 @media (max-width: 600px) {
     .wrap { padding: 0 18px; }
+    .wrap.hero-inner { padding-top: 34px; padding-bottom: 26px; gap: 18px; }
     .card-img { margin: 0 -18px; border-left: 0; border-right: 0; border-radius: 0; }
     /* compact random-find card: thumbnail beside the text, not a full-width photo */
     .lucky { padding: 18px 16px 18px; }
