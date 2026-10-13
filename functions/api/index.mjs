@@ -553,12 +553,12 @@ async function handleDelete({ id }) {
 const SUGGEST_KEY = 'data/suggestions.json';
 const SUGGEST_MAX_AGE_MS = 14 * 86400000;
 
-// our category → AliExpress top-level category ids (and a keyword where there is no match)
+// our category → AliExpress category ids (aliexpress.affiliate.category.get)
 const ALI_CATEGORIES = {
     'Electronics': { ids: '44' },
     'Phone Accessories': { ids: '509,202192403' },
     'Computers & Office': { ids: '7' },
-    'Home & Kitchen': { ids: '15,6' },
+    'Home & Kitchen': { ids: '200000920,1541,200033149,3710,100000041' },
     'Tools & Home Improvement': { ids: '1420,13' },
     'Lighting': { ids: '39' },
     'Women\'s Fashion': { ids: '200000345' },
@@ -570,12 +570,12 @@ const ALI_CATEGORIES = {
     'Sports & Outdoors': { ids: '18' },
     'Toys & Hobbies': { ids: '26' },
     'Baby & Kids': { ids: '1501' },
-    'Pet Supplies': { ids: '15', keywords: 'pet' },
+    'Pet Supplies': { ids: '100006664' },
     'Automotive': { ids: '34' },
-    'Garden': { ids: '15', keywords: 'garden' },
+    'Garden': { ids: '125' },
 };
 
-const SUGGEST_DEFAULTS = { categories: [], minOrders: 300, minRating: 95, minDiscount: 30, maxPrice: 50, perCategory: 5 };
+const SUGGEST_DEFAULTS = { categories: [], minOrders: 300, minRating: 95, minDiscount: 30, maxPrice: 50, perCategory: 3 };
 
 async function loadSuggestions() {
     try {
@@ -615,10 +615,10 @@ async function refreshSuggestions(deadline) {
 
     for (const category of st.categories.filter(c => ALI_CATEGORIES[c])) {
         if (Date.now() > deadline) { errors.push('ran out of time, some categories were not searched'); break; }
-        const { ids, keywords } = ALI_CATEGORIES[category];
+        const { ids } = ALI_CATEGORIES[category];
         try {
             const r = await aliCall('aliexpress.affiliate.product.query', {
-                ...ALI_MARKET, category_ids: ids, ...(keywords && { keywords }),
+                ...ALI_MARKET, category_ids: ids,
                 sort: 'LAST_VOLUME_DESC', page_size: '50',
                 // a different page each day so the same best-sellers don't come back
                 page_no: String(1 + Math.floor(Math.random() * 3)),
@@ -744,8 +744,6 @@ export const handler = async (event) => {
                 await fillHebrewTitles(products);
                 return json({ products, categories: CATEGORIES });
             }
-
-            case 'suggest-test-tmp': { const c = await aliCall('aliexpress.affiliate.category.get', {}); return json((c?.result?.categories?.category || []).filter(x => ['15', '6', '13', '1501', '200000297'].includes(String(x.parent_category_id))).map(x => `${x.parent_category_id}>${x.category_id}:${x.category_name}`)); }
 
             case 'login':
                 if (!process.env.ADMIN_PASSWORD) return json({ error: 'Admin password is not configured yet' }, 503);
