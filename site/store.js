@@ -347,4 +347,7 @@
         const [h, sub] = t('loadFailed');
         $('grid').innerHTML = `<div class="empty"><h2>${h}</h2><p>${sub}</p></div>`;
     });
+
+    // installable as an app (home screen / Google Play)
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();
