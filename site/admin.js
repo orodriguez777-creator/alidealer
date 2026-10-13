@@ -212,7 +212,7 @@
     });
 
     async function loadList() {
-        const [list, stats] = await Promise.all([api('list'), call('stats').catch(() => null)]);
+        const [list, stats] = await Promise.all([api('list'), call('stats').catch((e) => { note($('msg'), `Click counts couldn't load: ${e.message}`); return null; })]);
         products = list.products;
         if (stats) clicks = stats.clicks;
         renderList();
