@@ -745,7 +745,7 @@ export const handler = async (event) => {
                 return json({ products, categories: CATEGORIES });
             }
 
-            case 'suggest-test-tmp': return json(suggestView(await refreshSuggestions(Date.now() + 35000)));
+            case 'suggest-test-tmp': { const c = await aliCall('aliexpress.affiliate.category.get', {}); return json((c?.result?.categories?.category || []).filter(x => ['15', '6', '13', '1501', '200000297'].includes(String(x.parent_category_id))).map(x => `${x.parent_category_id}>${x.category_id}:${x.category_name}`)); }
 
             case 'login':
                 if (!process.env.ADMIN_PASSWORD) return json({ error: 'Admin password is not configured yet' }, 503);
