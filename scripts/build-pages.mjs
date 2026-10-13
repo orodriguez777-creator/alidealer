@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const SITE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'site');
 const ORIGIN = 'https://alidealer.com';
 const API = 'https://ghzfcfbdwidurfqkjaateras4m0hnndz.lambda-url.eu-central-1.on.aws/';
-const ASSET_V = 21;
+const ASSET_V = 22;
 const CONTACT = 'orodriguez777@gmail.com';
 const POLICY_DATE = { en: 'October 13, 2026', he: '13 באוקטובר 2026' };
 
@@ -31,7 +31,7 @@ const T = {
     en: {
         home: 'Home', slogan: 'Only the best deals', switchTo: 'עברית', switchLang: 'he',
         seeOn: 'See on AliExpress', categories: 'Browse by category', allDeals: 'All deals',
-        priceNote: 'Price as listed on AliExpress when we picked it. It can change, so check the final price there.',
+        priceNote: 'Price as listed on the AliExpress affiliate portal when we picked it. The price on the AliExpress site can differ and may even be cheaper, so check the final price there.',
         more: (c) => `More ${c} deals`,
         dealTitle: (p, price) => `${p}${price ? ` — ${price}` : ''} | www.Alidealer.com`,
         dealDesc: (p, price, c) => `${p}${price ? ` for ${price}` : ''} on AliExpress, hand-picked by www.Alidealer.com. See more ${c} deals.`,
@@ -40,11 +40,12 @@ const T = {
         catDesc: (n, c) => `${n} hand-picked ${c} finds from AliExpress, checked and sorted by www.Alidealer.com.`,
         disclosure: 'Affiliate disclosure: links on this site are AliExpress affiliate links. If you buy through them we may earn a small commission, at no extra cost to you.',
         privacy: 'Privacy policy',
+        priceDisclaimer: 'Price note: our prices come from the AliExpress affiliate portal and can differ from the AliExpress site, where the price may even be cheaper. We list only top-selling AliExpress products.',
     },
     he: {
         home: 'דף הבית', slogan: 'רק הדילים הכי טובים', switchTo: 'English', switchLang: 'en',
         seeOn: 'לצפייה ב-AliExpress', categories: 'קטגוריות', allDeals: 'כל הדילים',
-        priceNote: 'המחיר כפי שהופיע ב-AliExpress כשבחרנו את המוצר. הוא עשוי להשתנות, לכן כדאי לבדוק את המחיר הסופי שם.',
+        priceNote: 'המחיר כפי שהופיע בפורטל השותפים של AliExpress כשבחרנו את המוצר. המחיר באתר AliExpress עצמו עשוי להיות שונה ואפילו זול יותר, לכן כדאי לבדוק את המחיר הסופי שם.',
         more: (c) => `עוד דילים: ${c}`,
         dealTitle: (p, price) => `${p}${price ? ` — ${price}` : ''} | www.Alidealer.com`,
         dealDesc: (p, price, c) => `${p}${price ? ` ב-${price}` : ''} ב-AliExpress, נבחר בקפידה ב-www.Alidealer.com. עוד דילים של ${c}.`,
@@ -53,6 +54,7 @@ const T = {
         catDesc: (n, c) => `${n} מוצרי ${c} נבחרים מ-AliExpress, שנבדקו ומוינו בשבילכם ב-www.Alidealer.com.`,
         disclosure: 'גילוי נאות: הקישורים באתר הם קישורי שותפים של AliExpress. אם תקנו דרכם ייתכן שנקבל עמלה קטנה, ללא כל עלות נוספת עבורכם.',
         privacy: 'מדיניות פרטיות',
+        priceDisclaimer: 'הערה לגבי מחירים: המחירים באתר לקוחים מפורטל השותפים של AliExpress ועשויים להיות שונים מהמחירים באתר AliExpress עצמו, שם המחיר עשוי להיות אפילו זול יותר. אנחנו מציגים רק את המוצרים הנמכרים ביותר ב-AliExpress.',
     },
 };
 
@@ -146,7 +148,10 @@ ${cats.map(c => `                <li><a href="${catPath(c, lang)}">${esc(catName
         </nav>
 
         <footer>
-            <span>${t.disclosure}</span>
+            <div class="foot-notes">
+                <p>${t.disclosure}</p>
+                <p>${t.priceDisclaimer}</p>
+            </div>
             <span>© ${new Date().getFullYear()} www.Alidealer.com · <a href="${prefix(lang)}/privacy">${t.privacy}</a></span>
         </footer>
     </div>

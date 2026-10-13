@@ -330,6 +330,8 @@ html[lang="he"] .deal-go .icon { transform: scaleX(-1); }
 .legal li { margin-bottom: 6px; }
 .legal a { color: var(--accent); }
 footer a { color: inherit; }
+.foot-notes { max-width: 80ch; }
+.foot-notes p + p { margin-top: 6px; }
 .cat-nav { border-top: 1px solid var(--line); padding: 28px 0 32px; }
 .cat-nav h2 { font-size: 18px; margin-bottom: 14px; }
 .cat-nav ul, .cat-links { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }

@@ -33,6 +33,7 @@
             copyLink: 'Copy link',
             copied: 'Link copied',
             privacy: 'Privacy policy',
+            priceDisclaimer: 'Price note: our prices come from the AliExpress affiliate portal and can differ from the AliExpress site, where the price may even be cheaper. We list only top-selling AliExpress products.',
         },
         he: {
             pageTitle: 'www.Alidealer.com — רק הדילים הכי טובים מ-AliExpress',
@@ -62,6 +63,7 @@
             copyLink: 'העתקת קישור',
             copied: 'הקישור הועתק',
             privacy: 'מדיניות פרטיות',
+            priceDisclaimer: 'הערה לגבי מחירים: המחירים באתר לקוחים מפורטל השותפים של AliExpress ועשויים להיות שונים מהמחירים באתר AliExpress עצמו, שם המחיר עשוי להיות אפילו זול יותר. אנחנו מציגים רק את המוצרים הנמכרים ביותר ב-AliExpress.',
         },
     };
     const CATEGORY_HE = {
