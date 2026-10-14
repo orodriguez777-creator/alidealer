@@ -4,7 +4,8 @@
  * Public:  list, GET ?go=<productId> (count the click, redirect to the product page),
  *          GET ?share=[he/]<productId> (link-preview page for one deal)
  * Admin:   login, detect, save, delete, stats, post, suggestions, suggest-*  (require ADMIN_PASSWORD-derived token)
- * Daily schedule: search AliExpress for deal suggestions (see "deal suggestions")
+ * Hourly schedule: the AI marketing agency (agency.mjs); at 04 UTC also the
+ *          AliExpress deal suggestions (see "deal suggestions")
  *
  * Products are stored as one JSON document in the project bucket
  * (data/products.json) — a single admin writes, everyone reads.
@@ -16,6 +17,7 @@
  */
 import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
+import { initAgency, agencyAction, agencyHourly, approvedGuides, recordVisit } from './agency.mjs';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-central-1' });
 const DATA_KEY = 'data/products.json';
@@ -185,7 +187,8 @@ async function loadClicks() {
     }
 }
 
-async function handleStats() {
+// Folds new click events into data/clicks.json → { id: { total, week } }
+async function foldClicks() {
     const Bucket = process.env.STORAGE_BUCKET;
     const clicks = await loadClicks();
     const keys = [];
@@ -220,7 +223,7 @@ async function handleStats() {
     for (const [id, c] of Object.entries(clicks)) {
         out[id] = { total: c.total, week: Object.entries(c.days).reduce((n, [d, v]) => n + (d >= weekStart ? v : 0), 0) };
     }
-    return json({ clicks: out });
+    return out;
 }
 
 // ---------- sharing ----------
@@ -230,7 +233,13 @@ const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;',
 
 // What WhatsApp, Facebook and Telegram read when a deal link is posted: the deal's
 // own photo, name and price. People who open it land on the storefront with the deal shown.
-async function handleShare(param) {
+// Links posted by the agency carry ?s=<channel> (it arrives inside the share value,
+// "he/<id>?s=tg"), so visits can be counted per channel.
+async function handleShare(param, query, ua) {
+    const [path, qs = ''] = param.split('?');
+    param = path;
+    const tag = new URLSearchParams(qs).get('s') || query?.s;
+    if (tag) await recordVisit(String(tag), ua);
     const [lang, id] = param.startsWith('he/') ? ['he', param.slice(3)] : ['en', param];
     const p = (await loadProducts()).find(x => x.id === id);
     const he = lang === 'he';
@@ -260,7 +269,7 @@ async function handleShare(param) {
 </head>
 <body><a href="${escHtml(target)}">${escHtml(title)}</a><script>location.replace(${JSON.stringify(target)})</script></body>
 </html>`;
-    return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300' }, body: html };
+    return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': tag ? 'no-store' : 'public, max-age=300' }, body: html };
 }
 
 // Ready-to-paste social post for one deal
@@ -720,10 +729,18 @@ async function handleSuggestAdd(body) {
     return saved;
 }
 
+initAgency({ gemini, loadProducts, foldClicks, shareUrl, json, model: AI_MODEL, writeModel: TRANSLATE_MODEL });
+
 export const handler = async (event) => {
     if (event.source === 'schedule') {
-        const doc = await refreshSuggestions(Date.now() + 100000);
-        console.log('[suggest] daily run', JSON.stringify(doc.lastRun));
+        const deadline = Date.now() + 280000;
+        if (new Date().getUTCHours() === 4) {
+            try {
+                const doc = await refreshSuggestions(Date.now() + 100000);
+                console.log('[suggest] daily run', JSON.stringify(doc.lastRun));
+            } catch (e) { console.error('[suggest]', e); }
+        }
+        console.log('[agency] hourly run', JSON.stringify(await agencyHourly(deadline)));
         return { ok: true };
     }
 
@@ -733,7 +750,7 @@ export const handler = async (event) => {
         const go = event.queryStringParameters?.go;
         if (go) return await handleGo(go, event.headers?.['user-agent']);
         const share = event.queryStringParameters?.share;
-        if (share) return await handleShare(share);
+        if (share) return await handleShare(share, event.queryStringParameters, event.headers?.['user-agent']);
 
         const raw = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : event.body;
         const body = JSON.parse(raw || '{}');
@@ -752,6 +769,9 @@ export const handler = async (event) => {
                     return json({ error: 'Wrong password' }, 401);
                 }
                 return json({ token: issueToken() });
+
+            case 'agency-guides':
+                return json({ guides: await approvedGuides() });
         }
 
         if (!isAdmin(event)) return json({ error: 'Unauthorized' }, 401);
@@ -762,14 +782,19 @@ export const handler = async (event) => {
             case 'classify': return await handleClassify(body);
             case 'save':   return await handleSave(body);
             case 'delete': return await handleDelete(body);
-            case 'stats':  return await handleStats();
+            case 'stats':  return json({ clicks: await foldClicks() });
             case 'post':   return await handlePost(body);
             case 'suggestions': return json(suggestView(await loadSuggestions()));
             case 'suggest-refresh': return json(suggestView(await refreshSuggestions(Date.now() + 35000)));
             case 'suggest-settings': return await handleSuggestSettings(body);
             case 'suggest-add': return await handleSuggestAdd(body);
             case 'suggest-skip': return json(suggestView(await dropSuggestions(Array.isArray(body.itemIds) ? body.itemIds : [], true)));
-            default:       return json({ error: 'Unknown action' }, 400);
+            default:
+                if (String(body.action).startsWith('agency')) {
+                    const res = await agencyAction(body);
+                    if (res) return res;
+                }
+                return json({ error: 'Unknown action' }, 400);
         }
     } catch (error) {
         console.error(error);

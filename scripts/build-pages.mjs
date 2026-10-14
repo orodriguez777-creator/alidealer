@@ -1,5 +1,6 @@
 // Builds the pages Google indexes: one page per deal and per category, in English
-// and Hebrew, plus sitemap.xml and robots.txt. Reads the live catalog from the API.
+// and Hebrew, the buying guides approved in admin (AI agency), plus sitemap.xml and
+// robots.txt. Reads the live catalog from the API.
 //
 //   node scripts/build-pages.mjs && openkbs site deploy
 //
@@ -11,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const SITE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'site');
 const ORIGIN = 'https://alidealer.com';
 const API = 'https://ghzfcfbdwidurfqkjaateras4m0hnndz.lambda-url.eu-central-1.on.aws/';
-const ASSET_V = 22;
+const ASSET_V = 23;
 const CONTACT = 'orodriguez777@gmail.com';
 const POLICY_DATE = { en: 'October 13, 2026', he: '13 באוקטובר 2026' };
 
@@ -40,6 +41,7 @@ const T = {
         catDesc: (n, c) => `${n} hand-picked ${c} finds from AliExpress, checked and sorted by www.Alidealer.com.`,
         disclosure: 'Affiliate disclosure: links on this site are AliExpress affiliate links. If you buy through them we may earn a small commission, at no extra cost to you.',
         privacy: 'Privacy policy',
+        guide: 'Buying guide', readMore: 'Details',
         priceDisclaimer: 'Price note: our prices come from the AliExpress affiliate portal and can differ from the AliExpress site, where the price may even be cheaper. We list only top-selling AliExpress products.',
     },
     he: {
@@ -54,6 +56,7 @@ const T = {
         catDesc: (n, c) => `${n} מוצרי ${c} נבחרים מ-AliExpress, שנבדקו ומוינו בשבילכם ב-www.Alidealer.com.`,
         disclosure: 'גילוי נאות: הקישורים באתר הם קישורי שותפים של AliExpress. אם תקנו דרכם ייתכן שנקבל עמלה קטנה, ללא כל עלות נוספת עבורכם.',
         privacy: 'מדיניות פרטיות',
+        guide: 'מדריך קנייה', readMore: 'לפרטים',
         priceDisclaimer: 'הערה לגבי מחירים: המחירים באתר לקוחים מפורטל השותפים של AliExpress ועשויים להיות שונים מהמחירים באתר AliExpress עצמו, שם המחיר עשוי להיות אפילו זול יותר. אנחנו מציגים רק את המוצרים הנמכרים ביותר ב-AliExpress.',
     },
 };
@@ -258,6 +261,52 @@ function categoryPage(c, lang, items, cats) {
     });
 }
 
+// A buying guide written by the agency's SEO writer and approved in admin
+const guidePath = (g, lang) => `${prefix(lang)}/guides/${g.slug}`;
+
+function guidePage(g, lang, byId, cats) {
+    const t = T[lang];
+    const he = lang === 'he';
+    const pick = (en, hebrew) => (he && hebrew) || en;
+    const title = pick(g.title, g.titleHe);
+    const path = guidePath(g, lang);
+    const items = g.items.filter(i => byId.has(i.id)).map(i => ({ ...i, p: byId.get(i.id) }));
+    const trail = [[t.home, homePath(lang)], [t.guide], [title]];
+    const body = `${crumbs(lang, trail)}
+        <article class="legal guide">
+            <h1>${esc(title)}</h1>
+            <p>${esc(pick(g.intro, g.introHe))}</p>
+${items.map(({ p, why, whyHe }, n) => {
+        const price = parsePrice(p.price);
+        return `            <section class="guide-item">
+                <a class="guide-img" href="${dealPath(p, lang)}">${p.image ? `<img src="${esc(p.image)}" alt="${esc(titleOf(p, lang))}" loading="lazy" referrerpolicy="no-referrer" width="300" height="300">` : ''}</a>
+                <div>
+                    <h2>${n + 1}. <a href="${dealPath(p, lang)}">${esc(titleOf(p, lang))}</a></h2>
+                    <p>${esc(pick(why, whyHe))}</p>
+                    <p class="guide-foot">${price ? `<span class="price">${esc(price.label)}</span>` : ''}
+                        <a class="btn accent small" href="/api?go=${encodeURIComponent(p.id)}" target="_blank" rel="sponsored nofollow noopener">${t.seeOn}</a>
+                        <a href="${dealPath(p, lang)}">${t.readMore}</a></p>
+                </div>
+            </section>`;
+    }).join('\n')}
+            <p>${esc(pick(g.outro, g.outroHe))}</p>
+            <p class="deal-note">${t.priceNote}</p>
+        </article>`;
+    return layout({
+        lang, path, altPath: guidePath(g, he ? 'en' : 'he'), image: items.find(i => i.p.image)?.p.image, cats,
+        title: `${title} | www.Alidealer.com`,
+        description: pick(g.description, g.descriptionHe),
+        jsonLd: [breadcrumbLd(trail), {
+            '@context': 'https://schema.org', '@type': 'Article', headline: title, inLanguage: lang,
+            datePublished: g.createdAt, url: ORIGIN + path, publisher: { '@type': 'Organization', name: 'www.Alidealer.com' },
+        }, {
+            '@context': 'https://schema.org', '@type': 'ItemList',
+            itemListElement: items.map((i, n) => ({ '@type': 'ListItem', position: n + 1, url: ORIGIN + dealPath(i.p, lang) })),
+        }],
+        body,
+    });
+}
+
 // Privacy policy (also the policy URL for the Google Play listing). Keep it in
 // step with what the site and the app actually do.
 const mail = `<a href="mailto:${CONTACT}">${CONTACT}</a>`;
@@ -365,7 +414,7 @@ products.forEach(p => { counts[p.category] = (counts[p.category] || 0) + 1; });
 const cats = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
 
 // start clean so pages of deleted deals don't linger locally
-for (const dir of ['deal', 'category', 'he']) await rm(join(SITE_DIR, dir), { recursive: true, force: true });
+for (const dir of ['deal', 'category', 'guides', 'he']) await rm(join(SITE_DIR, dir), { recursive: true, force: true });
 
 const urls = [{ loc: '/', alt: null, lastmod: products[0].createdAt }];
 for (const lang of ['en', 'he']) {
@@ -377,6 +426,17 @@ for (const lang of ['en', 'he']) {
         const items = products.filter(p => p.category === c);
         await write(`${catPath(c, lang).slice(1)}.html`, categoryPage(c, lang, items, cats));
         urls.push({ loc: catPath(c, lang), en: catPath(c, 'en'), he: catPath(c, 'he'), lastmod: items.map(p => p.updatedAt || p.createdAt).sort().pop() });
+    }
+}
+
+// guides the owner approved in admin (a failed fetch just means no guides this run)
+const guides = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'agency-guides' }) })
+    .then(r => r.json()).then(d => d.guides || []).catch(() => []);
+const byId = new Map(products.map(p => [p.id, p]));
+for (const g of guides) {
+    for (const lang of ['en', 'he']) {
+        await write(`${guidePath(g, lang).slice(1)}.html`, guidePage(g, lang, byId, cats));
+        urls.push({ loc: guidePath(g, lang), en: guidePath(g, 'en'), he: guidePath(g, 'he'), lastmod: g.createdAt });
     }
 }
 
@@ -409,4 +469,4 @@ const links = cats.map(c => `<a href="${catPath(c, 'en')}" data-cat="${esc(c)}">
 await writeFile(indexFile, index.replace(/(<!-- category-links -->)[\s\S]*?(<!-- \/category-links -->)/,
     `$1\n                ${links}\n                $2`));
 
-console.log(`${products.length} deals, ${cats.length} categories → ${urls.length} URLs in sitemap.xml`);
+console.log(`${products.length} deals, ${cats.length} categories, ${guides.length} guides → ${urls.length} URLs in sitemap.xml`);

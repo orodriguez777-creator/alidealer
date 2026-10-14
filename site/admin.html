@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@400;600;700&family=Instrument+Sans:wght@400;600&family=Rubik:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=22">
+    <link rel="stylesheet" href="/styles.css?v=23">
 </head>
 <body>
     <header class="hero hero-small">
@@ -54,6 +54,7 @@
                         <button type="button" data-mode="one" aria-pressed="true">One link</button>
                         <button type="button" data-mode="bulk" aria-pressed="false">Several links</button>
                         <button type="button" data-mode="suggest" aria-pressed="false">Suggestions <span class="sg-badge" id="sg-badge"></span></button>
+                        <button type="button" data-mode="agency" aria-pressed="false">AI agency <span class="sg-badge" id="ag-badge"></span></button>
                     </div>
                     <div id="msg" class="note hidden"></div>
                     <form id="bulk" class="hidden" autocomplete="off">
@@ -93,6 +94,68 @@
                         <p class="bulk-hint">New suggestions arrive every morning. Check the price on the affiliate portal and fix it here if it differs, then press Add. Nothing goes live until you add it.</p>
                         <ul class="sg-list" id="sg-list"></ul>
                         <div class="row hidden" id="sg-foot" style="justify-content:flex-end"><button class="btn ghost small" type="button" id="sg-skip-all">Skip all shown</button></div>
+                    </section>
+                    <section id="agency" class="hidden">
+                        <div class="row sg-head">
+                            <span class="bulk-count" id="ag-status">Loading the agency…</span>
+                            <button class="btn ghost small" type="button" id="ag-run">Write new posts now</button>
+                        </div>
+                        <p class="bulk-hint">Every morning the strategist picks deals, the copywriter writes a post for each platform in Hebrew and English, and the editor checks them. Read, fix anything you like, and press Approve: approved posts go out at their time on the connected channels. For the other platforms use Copy or Share.</p>
+
+                        <details class="sg-filters" id="ag-channels">
+                            <summary>Channels and connections</summary>
+                            <ul class="ag-chans" id="ag-chans"></ul>
+                        </details>
+                        <details class="sg-filters" id="ag-settings">
+                            <summary>Settings</summary>
+                            <form id="ag-form" autocomplete="off">
+                                <div class="sg-nums">
+                                    <label>Deals per day <input class="input" id="ag-perDay" type="number" min="1" max="10"></label>
+                                    <label>Posting times (Israel) <input class="input" id="ag-slots" placeholder="09:00, 13:00, 19:00"></label>
+                                    <label>Language on automatic channels
+                                        <select class="input" id="ag-publishLang">
+                                            <option value="he">Hebrew</option>
+                                            <option value="en">English</option>
+                                            <option value="both">Both (two posts)</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="field">
+                                    <label>Platforms to write for</label>
+                                    <div class="sg-cats" id="ag-chan-boxes"></div>
+                                </div>
+                                <div class="ag-switches">
+                                    <label><input type="checkbox" id="ag-autopilot"> Autopilot: post without waiting for my OK</label>
+                                    <label><input type="checkbox" id="ag-guides"> Weekly SEO guide (Mondays)</label>
+                                    <label><input type="checkbox" id="ag-paused"> Pause the agency</label>
+                                </div>
+                                <div class="sg-nums">
+                                    <label>Telegram channel (@name or id) <input class="input" id="ag-telegramChat" placeholder="@alidealer"></label>
+                                    <label>Facebook Page id <input class="input" id="ag-facebookPageId"></label>
+                                    <label>Instagram business account id <input class="input" id="ag-instagramId"></label>
+                                    <label>Threads user id <input class="input" id="ag-threadsUserId"></label>
+                                    <label>Pinterest board id <input class="input" id="ag-pinterestBoard"></label>
+                                </div>
+                                <div class="row" style="justify-content:flex-end"><button class="btn small" type="submit" id="ag-save">Save settings</button></div>
+                            </form>
+                        </details>
+
+                        <h3 class="ag-h">Posts</h3>
+                        <ul class="ag-list" id="ag-list"></ul>
+
+                        <h3 class="ag-h">SEO guides</h3>
+                        <p class="bulk-hint">Articles for Google, built from your deals. Approved guides go on the site the next time the pages are rebuilt.</p>
+                        <ul class="ag-guides" id="ag-guides"></ul>
+                        <div class="row"><button class="btn ghost small" type="button" id="ag-guide-now">Write a guide now</button></div>
+
+                        <h3 class="ag-h">Results</h3>
+                        <div id="ag-report"></div>
+                        <div class="row"><button class="btn ghost small" type="button" id="ag-report-now">Write the report now</button></div>
+
+                        <details class="sg-filters ag-logbox">
+                            <summary>Activity</summary>
+                            <ul class="ag-log" id="ag-log"></ul>
+                        </details>
                     </section>
                     <form id="form" autocomplete="off">
                         <input type="hidden" id="id">
@@ -141,7 +204,7 @@
                     </form>
                 </div>
 
-                <div class="panel">
+                <div class="panel" id="list-panel">
                     <div class="list-head">
                         <h2>Listed finds <span id="total" style="color:var(--ink-soft);font-weight:600"></span></h2>
                         <select class="input sort" id="sort" aria-label="Sort finds">
@@ -179,6 +242,6 @@
     </dialog>
 
     <script src="/config.js?v=18"></script>
-    <script src="/admin.js?v=20"></script>
+    <script src="/admin.js?v=21"></script>
 </body>
 </html>

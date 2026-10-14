@@ -166,6 +166,10 @@
         $('form').classList.toggle('hidden', mode !== 'one');
         $('bulk').classList.toggle('hidden', mode !== 'bulk');
         $('suggest').classList.toggle('hidden', mode !== 'suggest');
+        $('agency').classList.toggle('hidden', mode !== 'agency');
+        // the agency needs the room: the finds list steps aside
+        document.querySelector('.admin-layout').classList.toggle('wide', mode === 'agency');
+        $('list-panel').classList.toggle('hidden', mode === 'agency');
         note($('msg'), '');
     }
     $('mode').addEventListener('click', (e) => {
@@ -445,6 +449,292 @@
         finally { busy($('sg-skip-all'), false); }
     });
 
+    // ---------- AI agency (agency.mjs on the server) ----------
+
+    let ag = null;
+    const agTab = {}; // draft id → { ch, lang } being viewed
+    const AG_IDS = ['telegramChat', 'facebookPageId', 'instagramId', 'threadsUserId', 'pinterestBoard'];
+    const AG_HELP = {
+        telegram: 'Needs a bot token and the channel name. The bot must be an admin of the channel.',
+        facebook: 'Needs a Page token from a Meta app and the Page id.',
+        instagram: 'Business account linked to the Facebook Page; uses the same token.',
+        threads: 'Needs a Threads token from the same Meta app.',
+        pinterest: 'Needs a Pinterest API token and a board id.',
+    };
+    const agWhen = (iso) => iso ? new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    const agLink = (d, ch, lang) => `${shareLink(d.productId, lang)}?s=${ag.channels[ch].tag}`;
+
+    // the text exactly as it should be pasted on the platform
+    function agFull(d, ch, lang) {
+        const text = d.posts[ch]?.[lang] || '';
+        return ag.channels[ch].link ? `${text}\n\n👉 ${agLink(d, ch, lang)}` : text;
+    }
+
+    function agShareUrl(d, ch, lang) {
+        const text = d.posts[ch]?.[lang] || '';
+        const link = agLink(d, ch, lang);
+        const e = encodeURIComponent;
+        return {
+            x: `https://twitter.com/intent/tweet?text=${e(`${text}\n${link}`)}`,
+            whatsapp: `https://wa.me/?text=${e(`${text}\n\n👉 ${link}`)}`,
+            telegram: `https://t.me/share/url?url=${e(link)}&text=${e(text)}`,
+            facebook: `https://www.facebook.com/sharer/sharer.php?u=${e(link)}`,
+            threads: `https://www.threads.net/intent/post?text=${e(`${text}\n\n${link}`)}`,
+            linkedin: `https://www.linkedin.com/feed/?shareActive=true&text=${e(`${text}\n\n${link}`)}`,
+            reddit: `https://www.reddit.com/submit?url=${e(link)}&title=${e(text.split('\n')[0].slice(0, 280))}`,
+            pinterest: `https://www.pinterest.com/pin/create/button/?url=${e(link)}&media=${e(d.image)}&description=${e(text)}`,
+        }[ch];
+    }
+
+    function agStatusLine(d) {
+        const auto = Object.keys(d.posts).some(c => ag.channels[c].auto && ag.connected[c]);
+        if (d.status === 'waiting') return `${icon('clock')} Waiting for your OK · ${ag.settings.autopilot ? 'Autopilot posts it' : 'slot'} ${agWhen(d.slot)}`;
+        if (d.status === 'approved') return auto ? `${icon('check')} Approved · posts ${agWhen(d.slot)}` : `${icon('check')} Approved · no automatic channel connected yet, use Copy / Share`;
+        if (d.status === 'publishing') return `${icon('loader', 'spin')} Publishing…`;
+        const res = Object.entries(d.results || {});
+        if (!res.length) return `${icon('check')} Done · nothing posted automatically (no channel connected)`;
+        return res.map(([k, r]) => r.ok
+            ? `${icon('check')} ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(k)}</a>` : esc(k)}${r.manual ? ' (by hand)' : ''}`
+            : `<span class="ag-bad" title="${esc(r.error)}">${icon('alert')} ${esc(k)}: ${esc(r.error)}</span>`).join(' · ');
+    }
+
+    function agDraftHtml(d) {
+        const chans = Object.keys(d.posts);
+        const t = agTab[d.id] ||= { ch: chans[0], lang: 'he' };
+        if (!d.posts[t.ch]) t.ch = chans[0];
+        const ch = ag.channels[t.ch];
+        const text = d.posts[t.ch]?.[t.lang] || '';
+        const share = agShareUrl(d, t.ch, t.lang);
+        const open = d.status === 'waiting' || d.status === 'approved';
+        const anyAuto = Object.values(ag.connected).some(Boolean);
+        return `
+            <li data-draft="${esc(d.id)}" class="ag-${esc(d.status)}">
+                <div class="ag-top">
+                    <img src="${esc(d.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+                    <div>
+                        <div class="t">${esc(d.title)}</div>
+                        <div class="c">${esc(d.category)}${d.price ? ` · ${esc(d.price)}` : ''}</div>
+                        ${d.angle ? `<div class="ag-angle">Angle: ${esc(d.angle)}</div>` : ''}
+                        ${d.notes ? `<div class="ag-angle">Editor: ${esc(d.notes)}</div>` : ''}
+                        <div class="ag-state">${agStatusLine(d)}</div>
+                    </div>
+                </div>
+                <div class="ag-tabs">${chans.map(c => `<button type="button" data-ch="${c}" aria-pressed="${c === t.ch}" class="${ag.channels[c].auto ? 'auto' : ''}${d.results?.[c]?.ok ? ' done' : ''}">${esc(ag.channels[c].name)}</button>`).join('')}</div>
+                <div class="ag-editor">
+                    <div class="seg ag-lang">
+                        <button type="button" data-lang="he" aria-pressed="${t.lang === 'he'}" lang="he">עברית</button>
+                        <button type="button" data-lang="en" aria-pressed="${t.lang === 'en'}">English</button>
+                    </div>
+                    <span class="ag-count">${text.length}/${ch.max}${ch.auto ? (ag.connected[t.ch] ? ' · posts automatically' : ' · automatic once connected') : ' · post it yourself'}${ch.link ? '' : ' · links don\'t work here, "link in bio"'}</span>
+                    <textarea class="input" rows="7" dir="${t.lang === 'he' ? 'rtl' : 'ltr'}" ${d.status === 'posted' ? 'readonly' : ''}>${esc(text)}</textarea>
+                    ${ch.link ? `<div class="ag-link">+ ${esc(agLink(d, t.ch, t.lang))}</div>` : ''}
+                </div>
+                <div class="sg-err hidden"></div>
+                <div class="ag-act">
+                    <button class="btn ghost small" type="button" data-ag="copy">${icon('copy')} Copy</button>
+                    ${share ? `<a class="btn ghost small" href="${esc(share)}" target="_blank" rel="noopener" data-ag="share">${icon('share')} Share</a>` : ''}
+                    ${!ch.auto || !ag.connected[t.ch] ? `<button class="btn ghost small" type="button" data-ag="manual" ${d.results?.[t.ch]?.ok ? 'disabled' : ''}>${d.results?.[t.ch]?.ok ? 'Marked posted' : 'Mark as posted'}</button>` : ''}
+                    <span class="ag-sp"></span>
+                    ${open ? `<button class="btn ghost small hidden" type="button" data-ag="save">Save edits</button>
+                    <button class="btn ghost small" type="button" data-ag="skip">Skip</button>
+                    ${anyAuto ? `<button class="btn ghost small" type="button" data-ag="now">Post now</button>` : ''}
+                    ${d.status === 'waiting' ? `<button class="btn small" type="button" data-ag="approve">${icon('check')} Approve</button>` : `<button class="btn ghost small" type="button" data-ag="unapprove">Undo approve</button>`}` : ''}
+                </div>
+            </li>`;
+    }
+
+    function renderAgency() {
+        const st = ag.settings;
+        const waiting = ag.drafts.filter(d => d.status === 'waiting').length;
+        $('ag-badge').textContent = waiting || '';
+        const conn = Object.entries(ag.connected).filter(([, v]) => v).map(([k]) => ag.channels[k].name);
+        $('ag-status').textContent = [
+            st.paused ? 'Paused' : st.autopilot ? 'Autopilot on' : `${waiting} post${waiting === 1 ? '' : 's'} waiting for your OK`,
+            conn.length ? `posting to ${conn.join(', ')}` : 'no channel connected yet',
+        ].join(' · ');
+
+        // drafts: open ones first (by slot), then the history
+        const open = ag.drafts.filter(d => d.status === 'waiting' || d.status === 'approved' || d.status === 'publishing').sort((a, b) => a.slot.localeCompare(b.slot));
+        const done = ag.drafts.filter(d => !open.includes(d));
+        $('ag-list').innerHTML = open.length || done.length
+            ? open.map(agDraftHtml).join('') + (done.length ? `<li class="ag-sep">Posted earlier</li>` + done.map(agDraftHtml).join('') : '')
+            : `<li class="ag-empty">No posts yet. New ones are written every morning, or press "Write new posts now".</li>`;
+
+        $('ag-chans').innerHTML = Object.entries(ag.channels).map(([k, c]) => `
+            <li>
+                <b>${esc(c.name)}</b>
+                <span>${c.auto
+                    ? (ag.connected[k] ? `<span class="ag-ok">${icon('check')} Connected</span>` : `<span class="ag-off">Not connected</span> · ${AG_HELP[k]}`)
+                    : 'Ready-to-post text with Copy / Share (this platform has no free posting API)'}</span>
+                ${c.auto && ag.connected[k] ? `<button class="btn ghost small" type="button" data-test="${k}">Test</button>` : '<span></span>'}
+            </li>`).join('');
+
+        $('ag-guides').innerHTML = ag.guides.length ? ag.guides.map(g => `
+            <li data-guide="${esc(g.id)}">
+                <div class="t">${esc(g.title)}</div>
+                <div class="t" dir="rtl" lang="he">${esc(g.titleHe)}</div>
+                <div class="ag-angle">${esc(g.description)} · ${g.items.length} deals · /guides/${esc(g.slug)}</div>
+                <details><summary>Read it</summary><p>${esc(g.intro)}</p><ol>${g.items.map(i => `<li>${esc(i.why)}</li>`).join('')}</ol><p>${esc(g.outro)}</p></details>
+                <div class="ag-act"><span class="ag-sp">${g.status === 'approved' ? `${icon('check')} Approved` : 'Waiting for your OK'}</span>
+                    ${g.status === 'approved' ? `<button class="btn ghost small" type="button" data-g="waiting">Undo</button>` : `<button class="btn ghost small" type="button" data-g="skipped">Skip</button><button class="btn small" type="button" data-g="approved">${icon('check')} Approve</button>`}
+                </div>
+            </li>`).join('') : '<li class="ag-empty">The first guide is written on Monday morning.</li>';
+
+        const r = ag.reports[0];
+        const visits = Object.entries(ag.visits.week).filter(([, n]) => n);
+        $('ag-report').innerHTML = `
+            <p class="bulk-hint">People who opened a deal from each platform: ${visits.length ? visits.map(([k, n]) => `<b>${esc(ag.channels[k].name)}</b> ${n}`).join(' · ') : 'none yet'} (last 7 days).</p>
+            ${r ? `<div class="ag-report"><div class="ag-angle">Analyst, ${agWhen(r.at)}</div><p>${esc(r.summary)}</p>${r.advice ? `<p><b>Next week:</b> ${esc(r.advice)}</p>` : ''}</div>` : '<p class="bulk-hint">The analyst writes a report every Monday.</p>'}`;
+
+        $('ag-log').innerHTML = ag.log.map(l => `<li><span>${agWhen(l.at)}</span> ${esc(l.text)}</li>`).join('') || '<li>Nothing yet.</li>';
+    }
+
+    function renderAgForm() {
+        const st = ag.settings;
+        $('ag-perDay').value = st.perDay;
+        $('ag-slots').value = st.slots.join(', ');
+        $('ag-publishLang').value = st.publishLang;
+        ['autopilot', 'guides', 'paused'].forEach(k => { $(`ag-${k}`).checked = !!st[k]; });
+        AG_IDS.forEach(k => { $(`ag-${k}`).value = st[k] || ''; });
+        $('ag-chan-boxes').innerHTML = Object.entries(ag.channels).map(([k, c]) => `<label><input type="checkbox" value="${k}" ${st.channels.includes(k) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('');
+    }
+
+    function agLoaded(d, form = true) {
+        ag = d;
+        renderAgency();
+        if (form) renderAgForm();
+    }
+
+    async function loadAgency() {
+        try { agLoaded(await call('agency')); }
+        catch (err) { $('ag-status').textContent = `The agency couldn't load: ${err.message}`; }
+    }
+
+    $('ag-run').addEventListener('click', async () => {
+        busy($('ag-run'), true, 'The team is writing (about a minute)');
+        note($('msg'), '');
+        try {
+            const r = await call('agency-run-now');
+            agLoaded(r, false);
+            note($('msg'), r.made ? `${r.made} new post${r.made === 1 ? '' : 's'} written. Read them below and approve the ones you like.` : `Nothing new was written${r.errors?.length ? `: ${r.errors[0]}` : '. Every deal was promoted in the last 14 days.'}`, r.made ? 'ok' : 'warn');
+        } catch (err) { note($('msg'), err.message); }
+        finally { busy($('ag-run'), false); }
+    });
+
+    $('ag-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        busy($('ag-save'), true, 'Saving');
+        try {
+            const settings = {
+                perDay: $('ag-perDay').value,
+                slots: $('ag-slots').value.split(/[,\s]+/).filter(Boolean).map(s => s.padStart(5, '0')),
+                publishLang: $('ag-publishLang').value,
+                channels: [...$('ag-chan-boxes').querySelectorAll('input:checked')].map(i => i.value),
+            };
+            ['autopilot', 'guides', 'paused'].forEach(k => { settings[k] = $(`ag-${k}`).checked; });
+            AG_IDS.forEach(k => { settings[k] = $(`ag-${k}`).value.trim(); });
+            agLoaded(await call('agency-settings', { settings }));
+            $('ag-settings').open = false;
+            note($('msg'), 'Settings saved.', 'ok');
+        } catch (err) { note($('msg'), err.message); }
+        finally { busy($('ag-save'), false); }
+    });
+
+    $('ag-chans').addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-test]');
+        if (!btn) return;
+        busy(btn, true, 'Checking');
+        try { note($('msg'), (await call('agency-test', { channel: btn.dataset.test })).message, 'ok'); }
+        catch (err) { note($('msg'), `${ag.channels[btn.dataset.test].name}: ${err.message}`); }
+        finally { busy(btn, false); }
+    });
+
+    const agDraftOf = (li) => ag.drafts.find(d => d.id === li.dataset.draft);
+    const agRerender = (li) => { li.outerHTML = agDraftHtml(agDraftOf(li)); };
+
+    $('ag-list').addEventListener('input', (e) => {
+        if (e.target.tagName !== 'TEXTAREA') return;
+        const li = e.target.closest('li');
+        const d = agDraftOf(li);
+        const t = agTab[d.id];
+        d.posts[t.ch][t.lang] = e.target.value;
+        (d.dirty ||= {})[t.ch] = true;
+        li.querySelector('.ag-count').textContent = li.querySelector('.ag-count').textContent.replace(/^\d+/, e.target.value.length);
+        li.querySelector('[data-ag="save"]')?.classList.remove('hidden');
+    });
+
+    $('ag-list').addEventListener('click', async (e) => {
+        const li = e.target.closest('li[data-draft]');
+        if (!li) return;
+        const d = agDraftOf(li);
+        const t = agTab[d.id];
+        const tab = e.target.closest('button[data-ch]');
+        const lang = e.target.closest('button[data-lang]');
+        if (tab || lang) {
+            if (tab) t.ch = tab.dataset.ch;
+            if (lang) t.lang = lang.dataset.lang;
+            return agRerender(li);
+        }
+        const btn = e.target.closest('[data-ag]');
+        if (!btn) return;
+        const act = btn.dataset.ag;
+        if (act === 'share') return;
+        if (act === 'copy') {
+            await navigator.clipboard.writeText(agFull(d, t.ch, t.lang));
+            btn.innerHTML = `${icon('check')} Copied`;
+            setTimeout(() => { btn.innerHTML = `${icon('copy')} Copy`; }, 1500);
+            return;
+        }
+        const err = li.querySelector('.sg-err');
+        li.querySelectorAll('.ag-act button').forEach(b => { b.disabled = true; });
+        try {
+            const edits = d.dirty ? Object.fromEntries(Object.keys(d.dirty).map(c => [c, d.posts[c]])) : undefined;
+            if (act === 'now') {
+                if (!confirm('Post this deal to the connected channels now?')) throw Object.assign(new Error(''), { quiet: true });
+                busy(btn, true, 'Posting');
+                if (edits) await call('agency-draft', { id: d.id, posts: edits });
+                const r = await call('agency-publish-now', { id: d.id });
+                agLoaded(r.view, false);
+                return;
+            }
+            const body = { id: d.id, posts: edits };
+            if (act === 'approve') body.status = 'approved';
+            if (act === 'unapprove') body.status = 'waiting';
+            if (act === 'skip') body.status = 'skipped';
+            if (act === 'manual') body.manual = t.ch;
+            busy(btn, true, act === 'save' ? 'Saving' : '…');
+            const { draft } = await call('agency-draft', body);
+            if (draft.status === 'skipped') ag.drafts = ag.drafts.filter(x => x.id !== d.id);
+            else Object.assign(d, draft, { dirty: undefined });
+            renderAgency();
+        } catch (ex) {
+            if (!ex.quiet) { err.textContent = ex.message; err.classList.remove('hidden'); }
+            li.querySelectorAll('.ag-act button').forEach(b => { b.disabled = false; });
+            busy(btn, false);
+            if (ex.status === 404 || ex.status === 409) loadAgency();
+        }
+    });
+
+    $('ag-guides').addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-g]');
+        if (!btn) return;
+        busy(btn, true, '…');
+        try {
+            await call('agency-guide', { id: btn.closest('li').dataset.guide, status: btn.dataset.g });
+            await loadAgency();
+            if (btn.dataset.g === 'approved') note($('msg'), 'Guide approved. It goes on the site with the next page rebuild.', 'ok');
+        } catch (err) { note($('msg'), err.message); busy(btn, false); }
+    });
+
+    for (const [id, action, label] of [['ag-guide-now', 'agency-guide-now', 'Writing (up to a minute)'], ['ag-report-now', 'agency-report-now', 'Counting']]) {
+        $(id).addEventListener('click', async () => {
+            busy($(id), true, label);
+            try { agLoaded(await call(action), false); }
+            catch (err) { note($('msg'), err.message); }
+            finally { busy($(id), false); }
+        });
+    }
+
     // ---------- list ----------
 
     const clicksOf = (p) => clicks[p.id] || { total: 0, week: 0 };
@@ -588,7 +878,7 @@
         try {
             const { categories } = await call('check');
             $('cats').innerHTML = categories.map(c => `<option value="${esc(c)}">`).join('');
-            await Promise.all([loadList(), loadSuggest()]);
+            await Promise.all([loadList(), loadSuggest(), loadAgency()]);
         } catch { /* 401 already handled */ }
     }
 
