@@ -171,7 +171,8 @@ function visitTotals(doc, days) {
 
 const FACT_RULES = `- Use only the facts given. Never invent ratings, reviews, stock levels, shipping times, discounts, "limited time" or "lowest price ever".
 - If a price is given, you may mention it, but say it is the price when we picked it (it can change on AliExpress). If no price is given, do not mention one.
-- Do not include any links or URLs; the link is added after your text.
+- Never claim that we bought, tried or used the product; we found and picked it.
+- Do not include any links or URLs; the link is added after your text. A plain sentence saying the link is an affiliate link is fine (Reddit needs it) and must be kept.
 - Hebrew must be natural, everyday Israeli Hebrew (not a translation); English casual and friendly.`;
 
 const linkFor = (id, lang, channel) => `${ctx.shareUrl(id, lang)}?s=${CHANNELS[channel].tag}`;
