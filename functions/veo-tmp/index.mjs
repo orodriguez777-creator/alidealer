@@ -1,7 +1,8 @@
 // Temporary: image-to-video for the real-person ad via Google Veo (user's GEMINI_API_KEY). Delete after use.
 const G = 'https://generativelanguage.googleapis.com/v1beta';
 export async function handler(event) {
-  const body = event.body ? JSON.parse(event.body) : {};
+  const raw = event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body;
+  const body = raw ? JSON.parse(raw) : {};
   if (!process.env.VEO_KEY || body.key !== process.env.VEO_KEY) return { statusCode: 403, body: '{"error":"forbidden"}' };
   if (!process.env.GEMINI_API_KEY) return { statusCode: 500, body: '{"error":"GEMINI_API_KEY not set"}' };
   const h = { 'x-goog-api-key': process.env.GEMINI_API_KEY, 'Content-Type': 'application/json' };
