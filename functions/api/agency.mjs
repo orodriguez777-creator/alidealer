@@ -599,8 +599,17 @@ async function testChannel(channel) {
     const meta = env('META_PAGE_TOKEN');
     switch (channel) {
         case 'telegram': {
-            const r = await callJson(`https://api.telegram.org/bot${env('TELEGRAM_BOT_TOKEN')}/getChat?chat_id=${encodeURIComponent(st.telegramChat)}`);
-            return `Connected to "${r.result.title || r.result.username}"`;
+            if (!env('TELEGRAM_BOT_TOKEN')) throw new Error('The bot token is not saved yet');
+            const api = `https://api.telegram.org/bot${env('TELEGRAM_BOT_TOKEN')}`;
+            const bot = (await callJson(`${api}/getMe`)).result;
+            if (!st.telegramChat) return `The bot @${bot.username} works. Now put your channel (like @yourchannel) in Settings and save.`;
+            const chat = (await callJson(`${api}/getChat?chat_id=${encodeURIComponent(st.telegramChat)}`).catch(() => {
+                throw new Error(`The bot @${bot.username} can't see ${st.telegramChat}. Check the name, and add the bot to the channel as an administrator.`);
+            })).result;
+            const me = (await callJson(`${api}/getChatMember?chat_id=${encodeURIComponent(st.telegramChat)}&user_id=${bot.id}`)).result;
+            if (me.status !== 'administrator' && me.status !== 'creator') throw new Error(`@${bot.username} is in "${chat.title}" but isn't an administrator. Make it an admin with "Post messages".`);
+            if (chat.type === 'channel' && me.can_post_messages === false) throw new Error(`@${bot.username} is an admin of "${chat.title}" but can't post. Turn on "Post messages" for it.`);
+            return `Connected: @${bot.username} can post to "${chat.title || chat.username}"`;
         }
         case 'facebook': {
             const r = await callJson(`${GRAPH}/${st.facebookPageId}?fields=name&access_token=${meta}`);

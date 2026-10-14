@@ -564,9 +564,9 @@
             <li>
                 <b>${esc(c.name)}</b>
                 <span>${c.auto
-                    ? (ag.connected[k] ? `<span class="ag-ok">${icon('check')} Connected</span>` : `<span class="ag-off">Not connected</span> · ${AG_HELP[k]}`)
+                    ? (ag.connected[k] ? `<span class="ag-ok">${icon('check')} Connected</span>` : (k === 'telegram' && ag.secrets.telegram ? `<span class="ag-off">Token saved</span> · put the channel name in Settings and save` : `<span class="ag-off">Not connected</span> · ${AG_HELP[k]}`))
                     : 'Ready-to-post text with Copy / Share (this platform has no free posting API)'}</span>
-                ${c.auto && ag.connected[k] ? `<button class="btn ghost small" type="button" data-test="${k}">Test</button>` : '<span></span>'}
+                ${c.auto && (ag.connected[k] || (k === 'telegram' && ag.secrets.telegram)) ? `<button class="btn ghost small" type="button" data-test="${k}">Test</button>` : '<span></span>'}
             </li>`).join('');
 
         $('ag-guides').innerHTML = ag.guides.length ? ag.guides.map(g => `
