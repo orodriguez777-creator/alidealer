@@ -465,8 +465,9 @@ footer a { color: inherit; }
 .ag-editor .seg { margin-bottom: 6px; }
 .ag-editor .seg button { padding: 4px 12px; font-size: 13px; }
 .ag-count { font-size: 12px; color: var(--ink-soft); margin-inline-start: 8px; }
-.ag-editor textarea { font-size: 14px; line-height: 1.5; resize: vertical; }
+.ag-editor textarea { font-family: inherit; font-size: 14px; line-height: 1.5; resize: vertical; }
 .ag-link { font-size: 12px; color: var(--ink-soft); margin-top: 4px; word-break: break-all; }
+.ag-act a.btn { text-decoration: none; }
 .ag-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
 .ag-sp { flex: 1; font-size: 13px; color: var(--ink-soft); }
 .ag-guides > li { border-top: 1px solid var(--line); padding: 12px 0; }
