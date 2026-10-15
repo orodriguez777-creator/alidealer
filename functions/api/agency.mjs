@@ -413,6 +413,31 @@ function connection(st) {
     };
 }
 
+// Fill in the account ids the tokens can tell us, so the user only has to save the tokens.
+// A Page token's /me is the Page itself; the Page knows its linked Instagram account.
+async function autoIds(st) {
+    const found = {};
+    const meta = env('META_PAGE_TOKEN');
+    if (meta) {
+        if (!/^\d+$/.test(st.facebookPageId || '')) {
+            const page = await callJson(`${GRAPH}/me?fields=id&access_token=${meta}`).catch(() => ({}));
+            if (page.id) found.facebookPageId = page.id;
+        }
+        const pageId = found.facebookPageId || st.facebookPageId;
+        if (!st.instagramId && /^\d+$/.test(pageId || '')) {
+            const r = await callJson(`${GRAPH}/${pageId}?fields=instagram_business_account&access_token=${meta}`).catch(() => ({}));
+            if (r.instagram_business_account?.id) found.instagramId = r.instagram_business_account.id;
+        }
+    }
+    if (env('THREADS_TOKEN') && !st.threadsUserId) {
+        const r = await callJson(`https://graph.threads.net/v1.0/me?fields=id&access_token=${env('THREADS_TOKEN')}`).catch(() => ({}));
+        if (r.id) found.threadsUserId = r.id;
+    }
+    if (!Object.keys(found).length) return st;
+    await mutate(doc => { Object.assign(doc.settings, found); });
+    return { ...st, ...found };
+}
+
 const PUBLISH = {
     async telegram(st, d, text, link) {
         const api = `https://api.telegram.org/bot${env('TELEGRAM_BOT_TOKEN')}`;
@@ -481,7 +506,7 @@ async function publishDraft(id) {
         return { ...x, settings: doc.settings };
     });
     if (!d) return null;
-    const st = d.settings;
+    const st = await autoIds(d.settings);
     const conn = connection(st);
     const langs = st.publishLang === 'both' ? ['he', 'en'] : [st.publishLang];
     const results = { ...d.results };
@@ -560,6 +585,7 @@ export async function agencyHourly(deadline) {
 async function view() {
     await foldVisits().catch(e => console.error('[visits]', e.message));
     const doc = await loadAgency();
+    doc.settings = await autoIds(doc.settings);
     const since = Date.now() - 30 * 86400000;
     return {
         settings: doc.settings,
@@ -596,7 +622,7 @@ function cleanSettings(cur, s = {}) {
 
 // Checks a channel's connection without posting anything
 async function testChannel(channel) {
-    const st = (await loadAgency()).settings;
+    const st = await autoIds((await loadAgency()).settings);
     const meta = env('META_PAGE_TOKEN');
     switch (channel) {
         case 'telegram': {
@@ -613,14 +639,18 @@ async function testChannel(channel) {
             return `Connected: @${bot.username} can post to "${chat.title || chat.username}"`;
         }
         case 'facebook': {
+            if (!meta) throw new Error('The Facebook Page token is not saved yet');
             const r = await callJson(`${GRAPH}/${st.facebookPageId}?fields=name&access_token=${meta}`);
             return `Connected to the Page "${r.name}"`;
         }
         case 'instagram': {
+            if (!meta) throw new Error('The Facebook Page token is not saved yet (Instagram posts through it)');
+            if (!st.instagramId) throw new Error('No Instagram account is linked to your Facebook Page. Link it in the Page settings (Linked accounts → Instagram), make sure it is a Professional account, then test again.');
             const r = await callJson(`${GRAPH}/${st.instagramId}?fields=username&access_token=${meta}`);
             return `Connected to @${r.username}`;
         }
         case 'threads': {
+            if (!env('THREADS_TOKEN')) throw new Error('The Threads token is not saved yet');
             const r = await callJson(`https://graph.threads.net/v1.0/${st.threadsUserId}?fields=username&access_token=${env('THREADS_TOKEN')}`);
             return `Connected to @${r.username}`;
         }
