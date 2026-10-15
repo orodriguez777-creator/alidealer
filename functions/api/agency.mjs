@@ -240,7 +240,7 @@ ${FACT_RULES}
 - Each channel must read differently; don't paste the same text everywhere.
 
 Return JSON {"he": {${channels.map(c => `"${c}": "..."`).join(', ')}}, "en": {same keys}} using \\n for line breaks.`,
-    { generationConfig: { maxOutputTokens: 8000, responseMimeType: 'application/json', temperature: 1 } }, 60000);
+    { generationConfig: { maxOutputTokens: 16000, responseMimeType: 'application/json', temperature: 1, thinkingConfig: { thinkingLevel: 'low' } } }, 90000);
     return out;
 }
 
@@ -260,7 +260,7 @@ Posts:
 ${JSON.stringify(posts)}
 
 Return JSON {"he": {...}, "en": {...}, "notes": "one short line on what you changed, or empty"} with the same keys.`,
-        { generationConfig: { maxOutputTokens: 8000, responseMimeType: 'application/json', temperature: 0.3 } }, 60000);
+        { generationConfig: { maxOutputTokens: 16000, responseMimeType: 'application/json', temperature: 0.3, thinkingConfig: { thinkingLevel: 'low' } } }, 90000);
         const ok = ['he', 'en'].every(l => channels.every(c => typeof out[l]?.[c] === 'string' && out[l][c].trim()));
         return ok ? out : { ...posts, notes: '' };
     } catch (e) {
@@ -278,7 +278,8 @@ function clip(text, max) {
 }
 
 async function makeDraft(p, pick, theme, channels, slot) {
-    const raw = await copywriter(p, pick.angle, theme, channels);
+    let raw = await copywriter(p, pick.angle, theme, channels).catch(e => { console.error('[copywriter]', e.message); return {}; });
+    if (!raw.he && !raw.en) raw = await copywriter(p, pick.angle, theme, channels); // one retry
     const edited = await editor(p, raw, channels);
     const posts = {};
     for (const c of channels) {
@@ -310,7 +311,7 @@ async function runDaily(n) {
     const errors = made.filter(r => r.status === 'rejected').map(r => r.reason?.message);
     return mutate(fresh => {
         fresh.drafts = [...drafts, ...fresh.drafts].slice(0, 300);
-        fresh.lastDaily = ilDate(Date.now());
+        if (drafts.length || !errors.length) fresh.lastDaily = ilDate(Date.now()); // all failed → retry next hour
         logLine(fresh, `${drafts.length} new draft${drafts.length === 1 ? '' : 's'}${theme ? ` · theme: ${theme}` : ''}${errors.length ? ` · ${errors.length} failed: ${errors[0]}` : ''}`);
         return { drafts, errors, theme };
     });

@@ -409,6 +409,7 @@ async function gemini(model, prompt, extra = {}, timeoutMs = 15000) {
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
     const m = text.match(/\{[\s\S]*\}/);
+    if (!m) console.error('[gemini]', model, res.status, JSON.stringify(data.error || { finish: data.candidates?.[0]?.finishReason, feedback: data.promptFeedback, usage: data.usageMetadata }).slice(0, 400));
     return m ? JSON.parse(m[0]) : {};
 }
 
