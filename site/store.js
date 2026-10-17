@@ -8,6 +8,9 @@
         en: {
             pageTitle: 'www.Alidealer.com — Only the best AliExpress deals',
             slogan: 'Only the best deals',
+            tgJoin: 'Join on Telegram',
+            tgBandTitle: 'New deals every day on Telegram',
+            tgBandText: 'Join our channel and get the best AliExpress finds straight to your phone. It’s free.',
             findsListed: 'finds listed',
             tagline: SITE.tagline,
             updated: (d) => `Latest find added ${d}`,
@@ -38,6 +41,9 @@
         he: {
             pageTitle: 'www.Alidealer.com — רק הדילים הכי טובים מ-AliExpress',
             slogan: 'רק הדילים הכי טובים',
+            tgJoin: 'הצטרפו בטלגרם',
+            tgBandTitle: 'דילים חדשים כל יום בטלגרם',
+            tgBandText: 'הצטרפו לערוץ שלנו וקבלו את המציאות הכי טובות מ-AliExpress ישר לטלפון. בחינם.',
             findsListed: 'מוצרים באתר',
             tagline: 'דילים נבחרים מ-AliExpress, שנבדקו ומוינו בשבילכם כדי שלא תצטרכו לחפש.',
             updated: (d) => `המוצר האחרון נוסף ב-${d}`,
