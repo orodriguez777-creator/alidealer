@@ -462,7 +462,7 @@
         pinterest: 'Needs a Pinterest API token and a board id.',
     };
     const agWhen = (iso) => iso ? new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
-    const agLink = (d, ch, lang) => `${shareLink(d.productId, lang)}?s=${ag.channels[ch].tag}`;
+    const agLink = (d, ch, lang) => d.links?.[lang] || `${shareLink(d.productId, lang)}?s=${ag.channels[ch].tag}`;
 
     // the text exactly as it should be pasted on the platform
     function agFull(d, ch, lang) {

@@ -516,7 +516,8 @@ async function publishDraft(id) {
             const key = langs.length > 1 ? `${c}-${l}` : c;
             if (results[key]?.ok || !d.posts[c][l]) continue;
             try {
-                const r = await PUBLISH[c](st, d, d.posts[c][l], linkFor(d.productId, l, c), l);
+                // guide posts carry their own page links instead of a deal
+                const r = await PUBLISH[c](st, d, d.posts[c][l], d.links?.[l] || linkFor(d.productId, l, c), l);
                 results[key] = { ok: true, ...r, at: new Date().toISOString() };
             } catch (e) {
                 console.error(`[publish ${key}]`, e.message);
