@@ -30,6 +30,7 @@
             loadFailed: ['Couldn\'t load finds', 'Please refresh in a moment.'],
             switchTo: 'עברית',
             browse: 'Browse by category',
+            guides: 'Buying guides',
             share: 'Share',
             shareDeal: 'Share this deal',
             sharedWithYou: 'Shared with you',
@@ -63,6 +64,7 @@
             loadFailed: ['לא הצלחנו לטעון את המוצרים', 'נסו לרענן את הדף בעוד רגע.'],
             switchTo: 'English',
             browse: 'קטגוריות',
+            guides: 'מדריכי קנייה',
             share: 'שיתוף',
             shareDeal: 'שתפו את הדיל',
             sharedWithYou: 'שיתפו איתכם',
@@ -110,6 +112,11 @@
             const path = a.getAttribute('href').replace(/^\/he\//, '/');
             a.href = he ? `/he${path}` : path;
             a.textContent = catName(a.dataset.cat);
+        });
+        document.querySelectorAll('#guide-links a').forEach(a => {
+            const path = a.getAttribute('href').replace(/^\/he\//, '/');
+            a.href = he ? `/he${path}` : path;
+            a.textContent = he ? a.dataset.he : a.dataset.en;
         });
         renderUpdated();
     }

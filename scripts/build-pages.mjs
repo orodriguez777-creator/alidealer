@@ -42,7 +42,7 @@ const T = {
         catDesc: (n, c) => `${n} hand-picked ${c} finds from AliExpress, checked and sorted by www.Alidealer.com.`,
         disclosure: 'Affiliate disclosure: links on this site are AliExpress affiliate links. If you buy through them we may earn a small commission, at no extra cost to you.',
         privacy: 'Privacy policy',
-        guide: 'Buying guide', readMore: 'Details',
+        guide: 'Buying guide', guides: 'Buying guides', readMore: 'Details',
         priceDisclaimer: 'Price note: our prices come from the AliExpress affiliate portal and can differ from the AliExpress site, where the price may even be cheaper. We list only top-selling AliExpress products.',
     },
     he: {
@@ -58,7 +58,7 @@ const T = {
         catDesc: (n, c) => `${n} מוצרי ${c} נבחרים מ-AliExpress, שנבדקו ומוינו בשבילכם ב-www.Alidealer.com.`,
         disclosure: 'גילוי נאות: הקישורים באתר הם קישורי שותפים של AliExpress. אם תקנו דרכם ייתכן שנקבל עמלה קטנה, ללא כל עלות נוספת עבורכם.',
         privacy: 'מדיניות פרטיות',
-        guide: 'מדריך קנייה', readMore: 'לפרטים',
+        guide: 'מדריך קנייה', guides: 'מדריכי קנייה', readMore: 'לפרטים',
         priceDisclaimer: 'הערה לגבי מחירים: המחירים באתר לקוחים מפורטל השותפים של AliExpress ועשויים להיות שונים מהמחירים באתר AliExpress עצמו, שם המחיר עשוי להיות אפילו זול יותר. אנחנו מציגים רק את המוצרים הנמכרים ביותר ב-AliExpress.',
     },
 };
@@ -145,7 +145,13 @@ function layout({ lang, title, description, path, altPath, image, jsonLd, body, 
 
     <div class="wrap">
 ${body}
-        <nav class="cat-nav" aria-label="${t.categories}">
+${GUIDES.length ? `        <nav class="cat-nav guide-nav" aria-label="${t.guides}">
+            <h2>${t.guides}</h2>
+            <ul>
+${GUIDES.map(g => `                <li><a href="${guidePath(g, lang)}">${esc((he && g.titleHe) || g.title)}</a></li>`).join('\n')}
+            </ul>
+        </nav>
+` : ''}        <nav class="cat-nav" aria-label="${t.categories}">
             <h2>${t.categories}</h2>
             <ul>
                 <li><a href="${homePath(lang)}">${t.allDeals}</a></li>
@@ -273,6 +279,7 @@ function categoryPage(c, lang, items, cats) {
 
 // A buying guide written by the agency's SEO writer and approved in admin
 const guidePath = (g, lang) => `${prefix(lang)}/guides/${g.slug}`;
+let GUIDES = [];
 
 function guidePage(g, lang, byId, cats) {
     const t = T[lang];
@@ -423,6 +430,12 @@ const counts = {};
 products.forEach(p => { counts[p.category] = (counts[p.category] || 0) + 1; });
 const cats = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
 
+// guides the owner approved in admin (a failed fetch just means no guides this run);
+// fetched first so every page can link to them
+const guides = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'agency-guides' }) })
+    .then(r => r.json()).then(d => d.guides || []).catch(() => []);
+GUIDES = guides;
+
 // start clean so pages of deleted deals don't linger locally
 for (const dir of ['deal', 'category', 'guides', 'he']) await rm(join(SITE_DIR, dir), { recursive: true, force: true });
 
@@ -439,9 +452,6 @@ for (const lang of ['en', 'he']) {
     }
 }
 
-// guides the owner approved in admin (a failed fetch just means no guides this run)
-const guides = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'agency-guides' }) })
-    .then(r => r.json()).then(d => d.guides || []).catch(() => []);
 const byId = new Map(products.map(p => [p.id, p]));
 for (const g of guides) {
     for (const lang of ['en', 'he']) {
@@ -477,6 +487,9 @@ const indexFile = join(SITE_DIR, 'index.html');
 const index = await readFile(indexFile, 'utf8');
 const links = cats.map(c => `<a href="${catPath(c, 'en')}" data-cat="${esc(c)}">${esc(c)}</a>`).join('\n                ');
 await writeFile(indexFile, index.replace(/(<!-- category-links -->)[\s\S]*?(<!-- \/category-links -->)/,
-    `$1\n                ${links}\n                $2`));
+    `$1\n                ${links}\n                $2`)
+    .replace(/(<!-- guide-links -->)[\s\S]*?(<!-- \/guide-links -->)/, `$1\n${guides.map(g =>
+        `                <a href="${guidePath(g, 'en')}" data-en="${esc(g.title)}" data-he="${esc(g.titleHe || g.title)}">${esc(g.title)}</a>`).join('\n')}\n                $2`)
+    .replace(/<nav class="cat-nav guide-nav"( hidden)?/, `<nav class="cat-nav guide-nav"${guides.length ? '' : ' hidden'}`));
 
 console.log(`${products.length} deals, ${cats.length} categories, ${guides.length} guides → ${urls.length} URLs in sitemap.xml`);
