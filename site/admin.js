@@ -479,6 +479,7 @@
             whatsapp: `https://wa.me/?text=${e(`${text}\n\n👉 ${link}`)}`,
             telegram: `https://t.me/share/url?url=${e(link)}&text=${e(text)}`,
             facebook: `https://www.facebook.com/sharer/sharer.php?u=${e(link)}`,
+            fbgroups: `https://www.facebook.com/sharer/sharer.php?u=${e(link)}`, // the dialog has "Share in a group"; paste the copied text there
             threads: `https://www.threads.net/intent/post?text=${e(`${text}\n\n${link}`)}`,
             linkedin: `https://www.linkedin.com/feed/?shareActive=true&text=${e(`${text}\n\n${link}`)}`,
             reddit: `https://www.reddit.com/submit?url=${e(link)}&title=${e(text.split('\n')[0].slice(0, 280))}`,
