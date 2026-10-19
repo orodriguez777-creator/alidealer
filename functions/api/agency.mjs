@@ -662,6 +662,8 @@ export async function agencyHourly(deadline) {
     const done = [];
     try { await ensureInvites(); done.push(`joins ${await pollJoins()}`); } catch (e) { console.error('[agency followers]', e.message); }
     if (doc.settings.paused) return [...done, 'paused'];
+    // a newly saved token may still need its Page / Instagram / Threads ids
+    await autoIds(doc.settings).catch(e => console.error('[agency ids]', e.message));
     const now = ilParts(Date.now());
     try { done.push(`published ${await publishDue(deadline - 90000)}`); } catch (e) { console.error('[agency publish]', e); }
     // the day's drafts are written early in the morning, Israel time
