@@ -36,7 +36,7 @@ export const CHANNELS = {
     threads: { name: 'Threads', auto: true, tag: 'th', max: 400, style: 'Threads post: casual and a bit witty, 1-3 short lines, at most 1 hashtag' },
     pinterest: { name: 'Pinterest', auto: true, tag: 'pin', max: 450, link: false, style: 'Pinterest pin description: helpful and keyword-rich, 2-3 sentences on what it is and who it is for, no hashtags, no emoji' },
     x: { name: 'X (Twitter)', auto: false, tag: 'x', max: 230, style: 'X post: one or two punchy lines, at most 2 hashtags, under 230 characters' },
-    tiktok: { name: 'TikTok', auto: false, tag: 'tt', max: 1200, link: false, style: 'TikTok: first a caption line, then a 3-shot idea for a 10-second clip (hook, the product in use, the price and "link in bio"), each shot on its own line starting with 🎬, then 4-6 hashtags' },
+    tiktok: { name: 'TikTok', auto: true, tag: 'tt', max: 1500, link: false, style: 'TikTok photo post caption: a short hook line, 2-3 short lines on what the product does and the price, "link in bio" (never a URL), then 4-6 hashtags. Upbeat and casual' },
     fbgroups: { name: 'Facebook groups', auto: false, tag: 'fbg', max: 900, style: 'Post for an Israeli AliExpress deals group on Facebook, written as a member sharing a find: personal and down to earth, 3-5 short lines, the price, one line that the price may change on AliExpress, a short question that invites comments, a line saying it is an affiliate link, no hashtags' },
     whatsapp: { name: 'WhatsApp', auto: false, tag: 'wa', max: 600, style: 'WhatsApp group message: like a friend sharing a find, 3-4 short lines, a couple of emoji, no hashtags' },
     linkedin: { name: 'LinkedIn', auto: false, tag: 'li', max: 1100, style: 'LinkedIn post: practical angle (work from home, productivity, a smart buy), 3-5 lines, 2-3 hashtags, no silly tone' },
@@ -57,6 +57,7 @@ const DEFAULTS = {
     channels: Object.keys(CHANNELS), // channels the copywriter writes for
     guides: true,
     telegramChat: '', facebookPageId: '', instagramId: '', threadsUserId: '', pinterestBoard: '',
+    tiktokUser: '', tiktokPrivacy: 'PUBLIC_TO_EVERYONE', tiktokComments: true,
 };
 
 // ---------- storage ----------
@@ -416,6 +417,7 @@ function connection(st) {
         instagram: !!(env('META_PAGE_TOKEN') && st.instagramId),
         threads: !!(env('THREADS_TOKEN') && st.threadsUserId),
         pinterest: !!(env('PINTEREST_TOKEN') && st.pinterestBoard),
+        tiktok: !!(env('TIKTOK_CLIENT_KEY') && st.tiktokUser),
     };
 }
 
@@ -446,6 +448,81 @@ async function autoIds(st) {
     if (!Object.keys(found).length) return st;
     await mutate(doc => { Object.assign(doc.settings, found); });
     return { ...st, ...found };
+}
+
+// ---------- TikTok (Content Posting API, photo posts) ----------
+// The owner connects the account once in admin (Login Kit). The login lasts a day and
+// is renewed with the refresh token, which lasts a year. Tokens live in their own file,
+// never in the view sent to the browser.
+
+const TT = 'https://open.tiktokapis.com/v2';
+const TT_AUTH_KEY = 'data/tiktok-auth.json';
+export const TT_REDIRECT = 'https://alidealer.com/admin';
+// photos must come from a URL prefix verified in the TikTok developer portal
+const TT_MEDIA = 'media/tiktok/';
+const TT_MEDIA_URL = 'https://alidealer.com/media/tiktok/';
+
+async function ttCall(path, { token, body, formBody } = {}) {
+    const res = await fetch(`${TT}${path}`, {
+        method: 'POST',
+        headers: formBody ? { 'Content-Type': 'application/x-www-form-urlencoded' } : { 'Content-Type': 'application/json; charset=UTF-8', Authorization: `Bearer ${token}` },
+        body: formBody ? new URLSearchParams(formBody) : JSON.stringify(body || {}),
+        signal: AbortSignal.timeout(30000),
+    });
+    const data = await res.json().catch(() => ({}));
+    // the token endpoint answers with error/error_description, the others with error.code
+    const code = typeof data.error === 'string' ? data.error : data.error?.code;
+    if (!res.ok || (code && code !== 'ok')) {
+        throw Object.assign(new Error(data.error_description || data.error?.message || code || `HTTP ${res.status}`), { code });
+    }
+    return data;
+}
+
+const ttSave = (auth) => s3.send(new PutObjectCommand({ Bucket: process.env.STORAGE_BUCKET, Key: TT_AUTH_KEY, Body: JSON.stringify(auth), ContentType: 'application/json' }));
+
+function ttStore(t) {
+    return {
+        access_token: t.access_token, refresh_token: t.refresh_token, open_id: t.open_id,
+        expires_at: Date.now() + (t.expires_in || 86400) * 1000,
+        refresh_expires_at: Date.now() + (t.refresh_expires_in || 31536000) * 1000,
+    };
+}
+
+async function ttToken() {
+    const auth = await getJson(TT_AUTH_KEY, null);
+    if (!auth?.refresh_token) throw new Error('TikTok is not connected. Press "Connect TikTok" in the Agency tab.');
+    if (auth.expires_at > Date.now() + 10 * 60000) return auth.access_token;
+    if (auth.refresh_expires_at < Date.now()) throw new Error('The TikTok login expired. Press "Connect TikTok" again.');
+    const t = await ttCall('/oauth/token/', { formBody: { client_key: env('TIKTOK_CLIENT_KEY'), client_secret: env('TIKTOK_CLIENT_SECRET'), grant_type: 'refresh_token', refresh_token: auth.refresh_token } });
+    await ttSave(ttStore(t));
+    return t.access_token;
+}
+
+// up to 4 product photos, copied to our verified media path as jpg
+async function ttPhotos(d) {
+    const p = (await ctx.loadProducts()).find(x => x.id === d.productId);
+    const extra = p?.itemId ? await ctx.productImages(p.itemId).catch(() => []) : [];
+    const urls = [...new Set([d.image, ...extra].filter(Boolean).map(plainImage))].slice(0, 4);
+    const out = [];
+    for (const [i, u] of urls.entries()) {
+        try {
+            const res = await fetch(u, { signal: AbortSignal.timeout(20000) });
+            const type = res.headers.get('content-type') || '';
+            if (!res.ok || !/jpe?g|webp/.test(type)) continue;
+            const ext = type.includes('webp') ? 'webp' : 'jpg';
+            const name = `${d.id}-${i}.${ext}`;
+            await s3.send(new PutObjectCommand({ Bucket: process.env.STORAGE_BUCKET, Key: TT_MEDIA + name, Body: Buffer.from(await res.arrayBuffer()), ContentType: type }));
+            out.push(TT_MEDIA_URL + name);
+        } catch (e) { console.error('[tiktok photo]', e.message); }
+    }
+    if (!out.length) throw new Error('No product photo could be prepared for TikTok');
+    return out;
+}
+
+const TT_PRIVACY = { PUBLIC_TO_EVERYONE: 'everyone', MUTUAL_FOLLOW_FRIENDS: 'friends', FOLLOWER_OF_CREATOR: 'followers', SELF_ONLY: 'only you' };
+
+async function ttCreator(token) {
+    return (await ttCall('/post/publish/creator_info/query/', { token })).data;
 }
 
 const PUBLISH = {
@@ -490,6 +567,37 @@ const PUBLISH = {
         const info = await callJson(`https://graph.threads.net/v1.0/${r.id}?fields=permalink&access_token=${token}`).catch(() => ({}));
         return { id: r.id, url: info.permalink || '' };
     },
+    async tiktok(st, d, text) {
+        const token = await ttToken();
+        const creator = await ttCreator(token);
+        const photos = await ttPhotos(d);
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        const post = (privacy) => ttCall('/post/publish/content/init/', {
+            token,
+            body: {
+                media_type: 'PHOTO', post_mode: 'DIRECT_POST',
+                post_info: {
+                    title: (lines[0] || d.title).slice(0, 90),
+                    description: text.slice(0, 4000),
+                    privacy_level: privacy,
+                    disable_comment: !st.tiktokComments,
+                    auto_add_music: true,
+                    brand_content_toggle: false, brand_organic_toggle: true, // our own affiliate deals
+                },
+                source_info: { source: 'PULL_FROM_URL', photo_images: photos, photo_cover_index: 0 },
+            },
+        });
+        const want = creator.privacy_level_options?.includes(st.tiktokPrivacy) ? st.tiktokPrivacy : 'SELF_ONLY';
+        let r, privacy = want;
+        try { r = await post(want); }
+        catch (e) {
+            // until TikTok approves (audits) the app, posts can only be private
+            if (!/unaudited/i.test(e.code || e.message) || want === 'SELF_ONLY') throw e;
+            privacy = 'SELF_ONLY';
+            r = await post(privacy);
+        }
+        return { id: r.data.publish_id, url: creator.creator_username ? `https://www.tiktok.com/@${creator.creator_username}` : '', ...(privacy === 'SELF_ONLY' && { note: 'private (only you can see it)' }) };
+    },
     async pinterest(st, d, text, link, lang) {
         const r = await callJson('https://api.pinterest.com/v5/pins', {
             method: 'POST',
@@ -522,7 +630,9 @@ async function publishDraft(id) {
     const results = { ...d.results };
     for (const c of Object.keys(PUBLISH)) {
         if (!conn[c] || !d.posts[c] || !st.channels.includes(c)) continue;
-        for (const l of langs) {
+        // TikTok gets one slideshow per deal (two near-identical ones look like spam), and guides have no product photos
+        if (c === 'tiktok' && !d.productId) continue;
+        for (const l of (c === 'tiktok' && langs.length > 1 ? ['he'] : langs)) {
             const key = langs.length > 1 ? `${c}-${l}` : c;
             // a post made under the other language setting counts too, so changing it never reposts
             if (results[key]?.ok || results[c]?.ok || results[`${c}-${l}`]?.ok || !d.posts[c][l]) continue;
@@ -701,7 +811,7 @@ async function view() {
         log: doc.log.slice(0, 15),
         visits: { week: visitTotals(doc, 7), month: visitTotals(doc, 30) },
         connected: connection(doc.settings),
-        secrets: { telegram: !!env('TELEGRAM_BOT_TOKEN'), meta: !!env('META_PAGE_TOKEN'), threads: !!env('THREADS_TOKEN'), pinterest: !!env('PINTEREST_TOKEN') },
+        secrets: { telegram: !!env('TELEGRAM_BOT_TOKEN'), meta: !!env('META_PAGE_TOKEN'), threads: !!env('THREADS_TOKEN'), pinterest: !!env('PINTEREST_TOKEN'), tiktok: !!(env('TIKTOK_CLIENT_KEY') && env('TIKTOK_CLIENT_SECRET')) },
         channels: Object.fromEntries(Object.entries(CHANNELS).map(([k, c]) => [k, { name: c.name, auto: c.auto, tag: c.tag, max: c.max, link: c.link !== false }])),
         lastDaily: doc.lastDaily,
         followers: { ...followersView(doc), error: tgError },
@@ -725,6 +835,9 @@ function cleanSettings(cur, s = {}) {
         threadsUserId: id(s.threadsUserId, cur.threadsUserId),
         pinterestBoard: id(s.pinterestBoard, cur.pinterestBoard),
         metaTokenId: cur.metaTokenId,
+        tiktokUser: cur.tiktokUser, // set by connecting the account
+        tiktokPrivacy: ['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY'].includes(s.tiktokPrivacy) ? s.tiktokPrivacy : cur.tiktokPrivacy,
+        tiktokComments: s.tiktokComments === undefined ? cur.tiktokComments : !!s.tiktokComments,
     };
 }
 
@@ -766,6 +879,10 @@ async function testChannel(channel) {
             if (!env('THREADS_TOKEN')) throw new Error('The Threads token is not saved yet');
             const r = await callJson(`https://graph.threads.net/v1.0/${st.threadsUserId}?fields=username&access_token=${env('THREADS_TOKEN')}`);
             return `Connected to @${r.username}`;
+        }
+        case 'tiktok': {
+            const c = await ttCreator(await ttToken());
+            return `Connected to @${c.creator_username} (${c.creator_nickname}). It can post as: ${c.privacy_level_options.map(o => TT_PRIVACY[o] || o).join(', ')}. Until TikTok approves your app, posts are private.`;
         }
         case 'pinterest': {
             const r = await callJson(`https://api.pinterest.com/v5/boards/${st.pinterestBoard}`, { headers: { Authorization: `Bearer ${env('PINTEREST_TOKEN')}` } });
@@ -831,6 +948,32 @@ export async function agencyAction(body) {
         }
         case 'agency-test':
             return json({ message: await testChannel(body.channel) });
+        case 'agency-tiktok-start': {
+            // the TikTok login page; it comes back to /admin with ?code=&state=
+            if (!env('TIKTOK_CLIENT_KEY') || !env('TIKTOK_CLIENT_SECRET')) return json({ error: 'Save the TikTok client key and secret first' }, 400);
+            const state = randomUUID();
+            await mutate(d => { d.tiktokState = { value: state, at: Date.now() }; });
+            const q = new URLSearchParams({ client_key: env('TIKTOK_CLIENT_KEY'), scope: 'user.info.basic,video.publish', response_type: 'code', redirect_uri: TT_REDIRECT, state });
+            return json({ url: `https://www.tiktok.com/v2/auth/authorize/?${q}` });
+        }
+        case 'agency-tiktok-finish': {
+            const doc = await loadAgency();
+            if (!doc.tiktokState || doc.tiktokState.value !== body.state || doc.tiktokState.at < Date.now() - 30 * 60000) return json({ error: 'This TikTok login is out of date. Press "Connect TikTok" again.' }, 400);
+            const t = await ttCall('/oauth/token/', { formBody: { client_key: env('TIKTOK_CLIENT_KEY'), client_secret: env('TIKTOK_CLIENT_SECRET'), code: String(body.code || ''), grant_type: 'authorization_code', redirect_uri: TT_REDIRECT } });
+            if (!String(t.scope || '').includes('video.publish')) return json({ error: 'TikTok didn\'t give permission to post. Connect again and allow posting.' }, 400);
+            await ttSave(ttStore(t));
+            const c = await ttCreator(t.access_token).catch(() => ({}));
+            const name = c.creator_username ? `@${c.creator_username}` : 'your TikTok account';
+            await mutate(d => { d.settings.tiktokUser = name; delete d.tiktokState; logLine(d, `TikTok connected: ${name}`); });
+            return json(await view());
+        }
+        case 'agency-tiktok-disconnect': {
+            const auth = await getJson(TT_AUTH_KEY, null);
+            if (auth?.access_token) await ttCall('/oauth/revoke/', { formBody: { client_key: env('TIKTOK_CLIENT_KEY'), client_secret: env('TIKTOK_CLIENT_SECRET'), token: auth.access_token } }).catch(e => console.error('[tiktok revoke]', e.message));
+            await ttSave({});
+            await mutate(d => { d.settings.tiktokUser = ''; logLine(d, 'TikTok disconnected'); });
+            return json(await view());
+        }
         case 'agency-invite-add': {
             // a separate link for a partner channel that gives us a shoutout
             const name = String(body.name || '').trim().slice(0, 60);

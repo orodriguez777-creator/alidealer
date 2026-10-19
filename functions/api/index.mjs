@@ -774,7 +774,15 @@ async function handleSuggestAdd(body) {
     return saved;
 }
 
-initAgency({ gemini, loadProducts, foldClicks, shareUrl, json, model: AI_MODEL, writeModel: TRANSLATE_MODEL });
+initAgency({
+    gemini, loadProducts, foldClicks, shareUrl, json, model: AI_MODEL, writeModel: TRANSLATE_MODEL,
+    // extra product photos for TikTok slideshows
+    productImages: async (itemId) => {
+        const r = await aliCall('aliexpress.affiliate.productdetail.get', { product_ids: itemId, ...ALI_MARKET });
+        const urls = r?.result?.products?.product?.[0]?.product_small_image_urls?.string;
+        return Array.isArray(urls) ? urls : urls ? [urls] : [];
+    },
+});
 
 export const handler = async (event) => {
     if (event.source === 'schedule') {

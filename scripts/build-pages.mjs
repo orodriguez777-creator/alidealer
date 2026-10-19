@@ -42,6 +42,7 @@ const T = {
         catDesc: (n, c) => `${n} hand-picked ${c} finds from AliExpress, checked and sorted by www.Alidealer.com.`,
         disclosure: 'Affiliate disclosure: links on this site are AliExpress affiliate links. If you buy through them we may earn a small commission, at no extra cost to you.',
         privacy: 'Privacy policy',
+        terms: 'Terms of use',
         guide: 'Buying guide', guides: 'Buying guides', readMore: 'Details',
         priceDisclaimer: 'Price note: our prices come from the AliExpress affiliate portal and can differ from the AliExpress site, where the price may even be cheaper. We list only top-selling AliExpress products.',
     },
@@ -58,6 +59,7 @@ const T = {
         catDesc: (n, c) => `${n} מוצרי ${c} נבחרים מ-AliExpress, שנבדקו ומוינו בשבילכם ב-www.Alidealer.com.`,
         disclosure: 'גילוי נאות: הקישורים באתר הם קישורי שותפים של AliExpress. אם תקנו דרכם ייתכן שנקבל עמלה קטנה, ללא כל עלות נוספת עבורכם.',
         privacy: 'מדיניות פרטיות',
+        terms: 'תנאי שימוש',
         guide: 'מדריך קנייה', guides: 'מדריכי קנייה', readMore: 'לפרטים',
         priceDisclaimer: 'הערה לגבי מחירים: המחירים באתר לקוחים מפורטל השותפים של AliExpress ועשויים להיות שונים מהמחירים באתר AliExpress עצמו, שם המחיר עשוי להיות אפילו זול יותר. אנחנו מציגים רק את המוצרים הנמכרים ביותר ב-AliExpress.',
     },
@@ -170,7 +172,7 @@ ${cats.map(c => `                <li><a href="${catPath(c, lang)}">${esc(catName
                 <p>${t.disclosure}</p>
                 <p>${t.priceDisclaimer}</p>
             </div>
-            <span>© ${new Date().getFullYear()} www.Alidealer.com · <a href="${prefix(lang)}/privacy">${t.privacy}</a></span>
+            <span>© ${new Date().getFullYear()} www.Alidealer.com · <a href="${prefix(lang)}/privacy">${t.privacy}</a> · <a href="${prefix(lang)}/terms">${t.terms}</a></span>
         </footer>
     </div>
     <script src="/join.js?v=2" defer></script>
@@ -394,21 +396,54 @@ const POLICY = {
     },
 };
 
-function privacyPage(lang, cats) {
+// Terms of use (also the terms URL for the TikTok developer app)
+const TERMS = {
+    en: {
+        title: 'Terms of use',
+        effective: 'Effective ',
+        intro: `These terms apply to www.Alidealer.com (the website at alidealer.com, the Android app and our posts on Telegram, Facebook, TikTok and other social networks, together "the service"). By using the service you agree to them.`,
+        sections: [
+            ['What the service is', 'A free list of hand-picked AliExpress products. We do not sell anything ourselves. Every purchase is made on AliExpress, under AliExpress\'s own terms, prices, shipping and return policies.'],
+            ['Affiliate links', 'Links to AliExpress are affiliate links. If you buy through them we may earn a commission from AliExpress, at no extra cost to you.'],
+            ['Prices and details', 'Prices, discounts, ratings and stock are shown as they were when we checked them and can change at any time on AliExpress. The price on AliExpress is the one that counts. We try to keep the information correct but cannot guarantee it.'],
+            ['Our social media posts', 'We publish deals on our own accounts on Telegram, Facebook, TikTok and other networks, partly with the help of automated tools that we control. These posts follow each network\'s rules and are about the same deals listed on the site.'],
+            ['Your use', 'Use the service for personal, lawful purposes. Do not copy the site in bulk, overload it, or try to break into it.'],
+            ['No warranty', 'The service is provided "as is". To the extent the law allows, we are not responsible for products bought on AliExpress, for their quality, delivery or for any loss from using the service.'],
+            ['Changes and contact', `We may update these terms; the date above shows the latest version. Questions: ${mail}.`],
+        ],
+    },
+    he: {
+        title: 'תנאי שימוש',
+        effective: 'בתוקף מ-',
+        intro: `התנאים האלה חלים על www.Alidealer.com (האתר alidealer.com, אפליקציית האנדרואיד והפוסטים שלנו בטלגרם, פייסבוק, טיקטוק ורשתות אחרות, יחד "השירות"). השימוש בשירות מהווה הסכמה להם.`,
+        sections: [
+            ['מה השירות', 'רשימה חינמית של מוצרים נבחרים מ-AliExpress. אנחנו לא מוכרים דבר בעצמנו. כל קנייה נעשית ב-AliExpress, לפי התנאים, המחירים, המשלוח ומדיניות ההחזרות של AliExpress.'],
+            ['קישורי שותפים', 'הקישורים ל-AliExpress הם קישורי שותפים. קנייה דרכם עשויה לזכות אותנו בעמלה מ-AliExpress, בלי עלות נוספת עבורכם.'],
+            ['מחירים ופרטים', 'מחירים, הנחות, דירוגים ומלאי מוצגים כפי שהיו כשבדקנו, ויכולים להשתנות בכל רגע ב-AliExpress. המחיר הקובע הוא המחיר ב-AliExpress. אנחנו משתדלים שהמידע יהיה נכון אך לא יכולים להבטיח זאת.'],
+            ['הפוסטים שלנו ברשתות', 'אנחנו מפרסמים דילים בחשבונות שלנו בטלגרם, פייסבוק, טיקטוק ורשתות נוספות, בין השאר בעזרת כלים אוטומטיים שבשליטתנו. הפוסטים עומדים בכללי כל רשת ועוסקים באותם דילים שמופיעים באתר.'],
+            ['השימוש שלכם', 'השתמשו בשירות למטרות אישיות וחוקיות. אין להעתיק את האתר בכמויות, להעמיס עליו או לנסות לפרוץ אליו.'],
+            ['אחריות', 'השירות ניתן "כמות שהוא". ככל שהחוק מתיר, איננו אחראים למוצרים שנקנו ב-AliExpress, לאיכותם, למשלוח או לכל נזק מהשימוש בשירות.'],
+            ['שינויים ויצירת קשר', `ייתכן שנעדכן את התנאים; התאריך למעלה מציין את הגרסה האחרונה. שאלות: ${mail}.`],
+        ],
+    },
+};
+const TERMS_DATE = { en: 'October 19, 2026', he: '19 באוקטובר 2026' };
+
+function privacyPage(lang, cats, doc = POLICY, slug = 'privacy', date = POLICY_DATE) {
     const t = T[lang];
-    const pol = POLICY[lang];
-    const path = `${prefix(lang)}/privacy`;
+    const pol = doc[lang];
+    const path = `${prefix(lang)}/${slug}`;
     const trail = [[t.home, homePath(lang)], [pol.title]];
     const wrapP = (html) => html.trimStart().startsWith('<') ? html : `<p>${html}</p>`;
     const body = `${crumbs(lang, trail)}
         <article class="legal">
             <h1>${pol.title}</h1>
-            <p class="effective">${pol.effective}${POLICY_DATE[lang]}</p>
+            <p class="effective">${pol.effective}${date[lang]}</p>
             <p>${pol.intro}</p>
 ${pol.sections.map(([h, html]) => `            <h2>${h}</h2>\n            ${wrapP(html)}`).join('\n')}
         </article>`;
     return layout({
-        lang, path, altPath: `${prefix(lang === 'he' ? 'en' : 'he')}/privacy`, cats,
+        lang, path, altPath: `${prefix(lang === 'he' ? 'en' : 'he')}/${slug}`, cats,
         title: `${pol.title} | www.Alidealer.com`,
         description: pol.intro.split('. ')[0] + '.',
         jsonLd: [breadcrumbLd(trail)],
@@ -463,6 +498,8 @@ for (const g of guides) {
 for (const lang of ['en', 'he']) {
     await write(`${prefix(lang).slice(1)}${lang === 'he' ? '/' : ''}privacy.html`, privacyPage(lang, cats));
     urls.push({ loc: `${prefix(lang)}/privacy`, en: '/privacy', he: '/he/privacy', lastmod: '2026-10-13' });
+    await write(`${prefix(lang).slice(1)}${lang === 'he' ? '/' : ''}terms.html`, privacyPage(lang, cats, TERMS, 'terms', TERMS_DATE));
+    urls.push({ loc: `${prefix(lang)}/terms`, en: '/terms', he: '/he/terms', lastmod: '2026-10-19' });
 }
 
 await write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>

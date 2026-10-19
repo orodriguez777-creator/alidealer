@@ -140,6 +140,17 @@
                                     <label>Instagram business account id <input class="input" id="ag-instagramId" placeholder="Filled in from the token"></label>
                                     <label>Threads user id <input class="input" id="ag-threadsUserId" placeholder="Filled in from the token"></label>
                                     <label>Pinterest board id <input class="input" id="ag-pinterestBoard"></label>
+                                    <label>Who sees TikTok posts
+                                        <select class="input" id="ag-tiktokPrivacy">
+                                            <option value="PUBLIC_TO_EVERYONE">Everyone</option>
+                                            <option value="FOLLOWER_OF_CREATOR">Followers</option>
+                                            <option value="MUTUAL_FOLLOW_FRIENDS">Friends</option>
+                                            <option value="SELF_ONLY">Only me</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="ag-switches">
+                                    <label><input type="checkbox" id="ag-tiktokComments"> Allow comments on TikTok posts</label>
                                 </div>
                                 <div class="row" style="justify-content:flex-end"><button class="btn small" type="submit" id="ag-save">Save settings</button></div>
                             </form>
@@ -255,6 +266,6 @@
     </dialog>
 
     <script src="/config.js?v=18"></script>
-    <script src="/admin.js?v=27"></script>
+    <script src="/admin.js?v=28"></script>
 </body>
 </html>

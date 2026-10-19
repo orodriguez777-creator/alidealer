@@ -37,6 +37,7 @@
             copyLink: 'Copy link',
             copied: 'Link copied',
             privacy: 'Privacy policy',
+            terms: 'Terms of use',
             priceDisclaimer: 'Price note: our prices come from the AliExpress affiliate portal and can differ from the AliExpress site, where the price may even be cheaper. We list only top-selling AliExpress products.',
         },
         he: {
@@ -71,6 +72,7 @@
             copyLink: 'העתקת קישור',
             copied: 'הקישור הועתק',
             privacy: 'מדיניות פרטיות',
+            terms: 'תנאי שימוש',
             priceDisclaimer: 'הערה לגבי מחירים: המחירים באתר לקוחים מפורטל השותפים של AliExpress ועשויים להיות שונים מהמחירים באתר AliExpress עצמו, שם המחיר עשוי להיות אפילו זול יותר. אנחנו מציגים רק את המוצרים הנמכרים ביותר ב-AliExpress.',
         },
     };
@@ -107,6 +109,7 @@
         $('lang-label').textContent = t('switchTo');
         $('lang').lang = he ? 'en' : 'he';
         $('privacy-link').href = he ? '/he/privacy' : '/privacy';
+        $('terms-link').href = he ? '/he/terms' : '/terms';
         // category pages exist in both languages: /category/… and /he/category/…
         document.querySelectorAll('#cat-links a').forEach(a => {
             const path = a.getAttribute('href').replace(/^\/he\//, '/');

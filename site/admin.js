@@ -464,6 +464,7 @@
         instagram: 'Business account linked to the Facebook Page; uses the same token.',
         threads: 'Needs a Threads token from the same Meta app.',
         pinterest: 'Needs a Pinterest API token and a board id.',
+        tiktok: 'Needs a TikTok developer app (client key and secret), then "Connect TikTok".',
     };
     const agWhen = (iso) => iso ? new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
     const agLink = (d, ch, lang) => d.links?.[lang] || `${shareLink(d.productId, lang)}?s=${ag.channels[ch].tag}`;
@@ -569,9 +570,10 @@
             <li>
                 <b>${esc(c.name)}</b>
                 <span>${c.auto
-                    ? (ag.connected[k] ? `<span class="ag-ok">${icon('check')} Connected</span>` : (k === 'telegram' && ag.secrets.telegram ? `<span class="ag-off">Token saved</span> · put the channel name in Settings and save` : `<span class="ag-off">Not connected</span> · ${AG_HELP[k]}`))
+                    ? (ag.connected[k] ? `<span class="ag-ok">${icon('check')} Connected${k === 'tiktok' ? ` as ${esc(ag.settings.tiktokUser)}` : ''}</span>` : k === 'tiktok' && ag.secrets.tiktok ? `<span class="ag-off">App keys saved</span> · press "Connect TikTok" and log in to the account to post from` : (k === 'telegram' && ag.secrets.telegram ? `<span class="ag-off">Token saved</span> · put the channel name in Settings and save` : `<span class="ag-off">Not connected</span> · ${AG_HELP[k]}`))
                     : 'Ready-to-post text with Copy / Share (this platform has no free posting API)'}</span>
-                ${c.auto && (ag.connected[k] || (k === 'telegram' && ag.secrets.telegram)) ? `<button class="btn ghost small" type="button" data-test="${k}">Test</button>` : '<span></span>'}
+                ${k === 'tiktok' && ag.secrets.tiktok ? `<span>${ag.connected.tiktok ? `<button class="btn ghost small" type="button" data-test="tiktok">Test</button> <button class="btn ghost small" type="button" data-tt="off">Disconnect</button>` : `<button class="btn small" type="button" data-tt="on">Connect TikTok</button>`}</span>`
+                    : c.auto && (ag.connected[k] || (k === 'telegram' && ag.secrets.telegram)) ? `<button class="btn ghost small" type="button" data-test="${k}">Test</button>` : '<span></span>'}
             </li>`).join('');
 
         $('ag-guides').innerHTML = ag.guides.length ? ag.guides.map(g => `
@@ -613,7 +615,8 @@
         $('ag-perDay').value = st.perDay;
         $('ag-slots').value = st.slots.join(', ');
         $('ag-publishLang').value = st.publishLang;
-        ['autopilot', 'guides', 'paused'].forEach(k => { $(`ag-${k}`).checked = !!st[k]; });
+        ['autopilot', 'guides', 'paused', 'tiktokComments'].forEach(k => { $(`ag-${k}`).checked = !!st[k]; });
+        $('ag-tiktokPrivacy').value = st.tiktokPrivacy;
         AG_IDS.forEach(k => { $(`ag-${k}`).value = st[k] || ''; });
         $('ag-chan-boxes').innerHTML = Object.entries(ag.channels).map(([k, c]) => `<label><input type="checkbox" value="${k}" ${st.channels.includes(k) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('');
     }
@@ -650,7 +653,8 @@
                 publishLang: $('ag-publishLang').value,
                 channels: [...$('ag-chan-boxes').querySelectorAll('input:checked')].map(i => i.value),
             };
-            ['autopilot', 'guides', 'paused'].forEach(k => { settings[k] = $(`ag-${k}`).checked; });
+            ['autopilot', 'guides', 'paused', 'tiktokComments'].forEach(k => { settings[k] = $(`ag-${k}`).checked; });
+            settings.tiktokPrivacy = $('ag-tiktokPrivacy').value;
             AG_IDS.forEach(k => { settings[k] = $(`ag-${k}`).value.trim(); });
             agLoaded(await call('agency-settings', { settings }));
             $('ag-settings').open = false;
@@ -660,6 +664,16 @@
     });
 
     $('ag-chans').addEventListener('click', async (e) => {
+        const tt = e.target.closest('button[data-tt]');
+        if (tt) {
+            if (tt.dataset.tt === 'off' && !confirm('Disconnect TikTok? Posting to TikTok stops until you connect again.')) return;
+            busy(tt, true, tt.dataset.tt === 'on' ? 'Opening TikTok' : 'Disconnecting');
+            try {
+                if (tt.dataset.tt === 'on') location.href = (await call('agency-tiktok-start')).url;
+                else { agLoaded(await call('agency-tiktok-disconnect'), false); note($('msg'), 'TikTok disconnected.', 'ok'); }
+            } catch (err) { note($('msg'), err.message); busy(tt, false); }
+            return;
+        }
         const btn = e.target.closest('button[data-test]');
         if (!btn) return;
         busy(btn, true, 'Checking');
@@ -918,6 +932,23 @@
     $('post-close').addEventListener('click', () => postbox.close());
     postbox.addEventListener('click', (e) => { if (e.target === postbox) postbox.close(); });
 
+    // TikTok login comes back here as /admin?code=…&state=…
+    const ttBack = new URLSearchParams(location.search);
+    if (ttBack.has('state')) history.replaceState(null, '', location.pathname);
+
+    async function finishTikTok() {
+        setMode('agency');
+        if (!ttBack.get('code')) {
+            note($('msg'), `TikTok wasn't connected: ${ttBack.get('error_description') || ttBack.get('error') || 'the login was cancelled'}.`);
+            return;
+        }
+        note($('msg'), 'Connecting TikTok…', 'warn');
+        try {
+            agLoaded(await call('agency-tiktok-finish', { code: ttBack.get('code'), state: ttBack.get('state') }));
+            note($('msg'), `TikTok connected as ${ag.settings.tiktokUser}. New deals will be posted there as photo slideshows.`, 'ok');
+        } catch (err) { note($('msg'), `TikTok: ${err.message}`); }
+    }
+
     async function start() {
         show('app');
         setPreview('');
@@ -925,6 +956,7 @@
             const { categories } = await call('check');
             $('cats').innerHTML = categories.map(c => `<option value="${esc(c)}">`).join('');
             await Promise.all([loadList(), loadSuggest(), loadAgency()]);
+            if (ttBack.has('state')) { await finishTikTok(); ttBack.delete('state'); }
         } catch { /* 401 already handled */ }
     }
 
