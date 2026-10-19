@@ -134,7 +134,7 @@ function layout({ lang, title, description, path, altPath, image, jsonLd, body, 
                 </span>
             </a>
             <div class="masthead-meta">
-                <a class="lang tg-join" href="https://t.me/alidealer" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>${t.tgJoin}</a>
+                <a class="lang tg-join" href="/api?tg=site" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>${t.tgJoin}</a>
                 <a class="lang" href="${he ? enPath : hePath}" hreflang="${t.switchLang}" lang="${t.switchLang}">
                     <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
                     ${t.switchTo}
@@ -162,7 +162,7 @@ ${cats.map(c => `                <li><a href="${catPath(c, lang)}">${esc(catName
         <section class="tg-band">
             <span class="tg-logo"><svg class="icon" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></span>
             <div><strong>${t.tgBandTitle}</strong><span>${t.tgBandText}</span></div>
-            <a class="btn tg-btn" href="https://t.me/alidealer" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>${t.tgJoin}</a>
+            <a class="btn tg-btn" href="/api?tg=site" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>${t.tgJoin}</a>
         </section>
 
         <footer>
@@ -173,7 +173,7 @@ ${cats.map(c => `                <li><a href="${catPath(c, lang)}">${esc(catName
             <span>© ${new Date().getFullYear()} www.Alidealer.com · <a href="${prefix(lang)}/privacy">${t.privacy}</a></span>
         </footer>
     </div>
-    <script src="/join.js?v=1" defer></script>
+    <script src="/join.js?v=2" defer></script>
 </body>
 </html>
 `;
@@ -478,6 +478,7 @@ ${urls.map(u => `  <url>
 await write('robots.txt', `User-agent: *
 Disallow: /admin
 Disallow: /api?go=
+Disallow: /api?tg=
 
 Sitemap: ${ORIGIN}/sitemap.xml
 `);

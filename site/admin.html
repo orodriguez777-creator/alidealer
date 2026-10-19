@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@400;600;700&family=Instrument+Sans:wght@400;600&family=Rubik:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=24">
+    <link rel="stylesheet" href="/styles.css?v=25">
 </head>
 <body>
     <header class="hero hero-small">
@@ -148,6 +148,14 @@
                         <ul class="ag-guides" id="ag-guides"></ul>
                         <div class="row"><button class="btn ghost small" type="button" id="ag-guide-now">Write a guide now</button></div>
 
+                        <h3 class="ag-h">Telegram followers</h3>
+                        <p class="bulk-hint">Each place you share the channel gets its own invite link, so you can see where new followers come from. Use these links instead of t.me/alidealer.</p>
+                        <div id="ag-tg"></div>
+                        <form class="row ag-tg-add" id="ag-tg-add" autocomplete="off">
+                            <input id="ag-tg-name" maxlength="60" placeholder="Partner channel name, e.g. Gadgets IL">
+                            <button class="btn ghost small" type="submit">Add a partner link</button>
+                        </form>
+
                         <h3 class="ag-h">Results</h3>
                         <div id="ag-report"></div>
                         <div class="row"><button class="btn ghost small" type="button" id="ag-report-now">Write the report now</button></div>
@@ -242,6 +250,6 @@
     </dialog>
 
     <script src="/config.js?v=18"></script>
-    <script src="/admin.js?v=25"></script>
+    <script src="/admin.js?v=26"></script>
 </body>
 </html>

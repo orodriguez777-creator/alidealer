@@ -1,7 +1,7 @@
 // After a deal click (the product opens in a new tab), invite the visitor to the Telegram channel.
 // Shown at most once every 3 days, and never again after they press Join.
 (() => {
-    const CHANNEL = 'https://t.me/alidealer';
+    const CHANNEL = '/api?tg=site'; // redirects to the channel's website invite link (joins are counted per source)
     const KEY = 'tgInvite';
     const STRINGS = {
         en: { title: 'Want deals like this every day?', text: 'Join our Telegram channel and get the best AliExpress finds on your phone. It’s free.', join: 'Join on Telegram', close: 'Close' },
@@ -40,6 +40,6 @@
     }, true);
     // a Join click anywhere on the page counts too
     document.addEventListener('click', (e) => {
-        if (e.target.closest(`a[href^="${CHANNEL}"]`)) localStorage.setItem(KEY, 'joined');
+        if (e.target.closest(`a[href^="${CHANNEL}"], a[href^="https://t.me/alidealer"]`)) localStorage.setItem(KEY, 'joined');
     });
 })();

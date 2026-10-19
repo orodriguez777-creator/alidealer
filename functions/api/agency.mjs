@@ -44,6 +44,10 @@ export const CHANNELS = {
 };
 const TAGS = new Set(Object.values(CHANNELS).map(c => c.tag));
 
+// Telegram invite links, one per place people join from. Partners are added in the admin.
+const INVITE_SOURCES = { site: 'Website', fbgroups: 'Facebook groups', whatsapp: 'WhatsApp' };
+export const PUBLIC_CHANNEL = 'https://t.me/alidealer';
+
 const DEFAULTS = {
     paused: false,
     autopilot: false,
@@ -71,6 +75,7 @@ async function loadAgency() {
     const doc = await getJson(AGENCY_KEY, {});
     return {
         drafts: [], guides: [], reports: [], visits: {}, lastDaily: null, lastWeekly: null, log: [],
+        invites: {}, joins: {}, leaves: {}, members: {}, tgOffset: 0,
         ...doc,
         settings: { ...DEFAULTS, ...doc.settings },
     };
@@ -562,11 +567,101 @@ const isoWeek = (ms) => {
     return `${d.getUTCFullYear()}-W${String(Math.ceil(((d - start) / 86400000 + 1) / 7)).padStart(2, '0')}`;
 };
 
+// ---------- Telegram followers ----------
+
+const tgApi = () => `https://api.telegram.org/bot${env('TELEGRAM_BOT_TOKEN')}`;
+const tgReady = (st) => !!(env('TELEGRAM_BOT_TOKEN') && st.telegramChat);
+const sourceSlug = (name) => String(name).toLowerCase().replace(/[^a-z0-9א-ת]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'partner';
+
+// Telegram's own link name is how a join is matched back to its source
+async function createInvite(st, key, name) {
+    const r = await callJson(`${tgApi()}/createChatInviteLink`, form({ chat_id: st.telegramChat, name: `src:${key}`.slice(0, 32) }));
+    return { name, link: r.result.invite_link, createdAt: new Date().toISOString() };
+}
+
+async function ensureInvites() {
+    const doc = await loadAgency();
+    if (!tgReady(doc.settings)) return 0;
+    const made = {};
+    for (const [key, name] of Object.entries(INVITE_SOURCES)) {
+        if (!doc.invites[key]) made[key] = await createInvite(doc.settings, key, name);
+    }
+    if (Object.keys(made).length) await mutate(d => { for (const [k, v] of Object.entries(made)) d.invites[k] ??= v; });
+    return Object.keys(made).length;
+}
+
+// Who joined or left since the last check. Telegram keeps these updates for 24 hours,
+// so the hourly run never misses any. Joins without one of our links count as "direct".
+async function pollJoins() {
+    const doc = await loadAgency();
+    if (!tgReady(doc.settings)) return 0;
+    const chat = (await callJson(`${tgApi()}/getChat?chat_id=${encodeURIComponent(doc.settings.telegramChat)}`)).result;
+    const res = await callJson(`${tgApi()}/getUpdates?offset=${(doc.tgOffset || 0) + 1}&timeout=0&allowed_updates=${encodeURIComponent('["chat_member"]')}`);
+    const today = ilDate(Date.now());
+    const count = await callJson(`${tgApi()}/getChatMemberCount?chat_id=${chat.id}`).then(r => r.result).catch(() => null);
+    const IN = ['member', 'administrator', 'creator', 'restricted'];
+    let n = 0;
+    await mutate(d => {
+        for (const u of res.result) {
+            if (u.update_id <= (d.tgOffset || 0)) continue; // counted by a run that overlapped this one
+            d.tgOffset = u.update_id;
+            const m = u.chat_member;
+            if (!m || m.chat.id !== chat.id || m.new_chat_member.user.is_bot) continue;
+            const was = IN.includes(m.old_chat_member.status), is = IN.includes(m.new_chat_member.status);
+            const day = ilDate(m.date * 1000);
+            if (!was && is) {
+                const name = m.invite_link?.name || '';
+                const key = name.startsWith('src:') && d.invites[name.slice(4)] ? name.slice(4)
+                    : Object.keys(d.invites).find(k => d.invites[k].link === m.invite_link?.invite_link) || 'direct';
+                d.joins[key] ??= {};
+                d.joins[key][day] = (d.joins[key][day] || 0) + 1;
+                n++;
+            } else if (was && !is) {
+                d.leaves[day] = (d.leaves[day] || 0) + 1;
+            }
+        }
+        if (count !== null) d.members[today] = count;
+        // keep about a year of daily numbers
+        const cut = ilDate(Date.now() - 400 * 86400000);
+        for (const days of [d.leaves, d.members, ...Object.values(d.joins)]) for (const k of Object.keys(days)) if (k < cut) delete days[k];
+    });
+    return n;
+}
+
+const sumDays = (days = {}, n) => {
+    const cut = n ? ilDate(Date.now() - (n - 1) * 86400000) : '';
+    return Object.entries(days).reduce((s, [k, v]) => s + (k >= cut ? v : 0), 0);
+};
+
+function followersView(doc) {
+    const keys = [...Object.keys(doc.invites), 'direct'];
+    const latest = Object.keys(doc.members).sort().pop();
+    return {
+        members: latest ? doc.members[latest] : null,
+        since: Object.values(doc.invites).map(i => i.createdAt).sort()[0] || null,
+        sources: keys.map(k => ({
+            key: k,
+            name: k === 'direct' ? 'Other (the public @ link, search, forwards)' : doc.invites[k].name,
+            link: k === 'direct' ? PUBLIC_CHANNEL : doc.invites[k].link,
+            partner: !!doc.invites[k]?.partner, revoked: !!doc.invites[k]?.revoked,
+            week: sumDays(doc.joins[k], 7), month: sumDays(doc.joins[k], 30), total: sumDays(doc.joins[k]),
+        })),
+        leaves: { week: sumDays(doc.leaves, 7), month: sumDays(doc.leaves, 30) },
+    };
+}
+
+// The site's Join buttons go through /api?tg=site, so the link can be swapped without a rebuild
+export async function inviteLink(key) {
+    try { return (await loadAgency()).invites[key]?.link || PUBLIC_CHANNEL; }
+    catch { return PUBLIC_CHANNEL; }
+}
+
 // Called every hour by the api function's schedule
 export async function agencyHourly(deadline) {
     const doc = await loadAgency();
     const done = [];
-    if (doc.settings.paused) return ['paused'];
+    try { await ensureInvites(); done.push(`joins ${await pollJoins()}`); } catch (e) { console.error('[agency followers]', e.message); }
+    if (doc.settings.paused) return [...done, 'paused'];
     const now = ilParts(Date.now());
     try { done.push(`published ${await publishDue(deadline - 90000)}`); } catch (e) { console.error('[agency publish]', e); }
     // the day's drafts are written early in the morning, Israel time
@@ -586,6 +681,8 @@ export async function agencyHourly(deadline) {
 
 async function view() {
     await foldVisits().catch(e => console.error('[visits]', e.message));
+    let tgError = '';
+    await ensureInvites().then(pollJoins).catch(e => { tgError = e.message; console.error('[followers]', e.message); });
     const doc = await loadAgency();
     doc.settings = await autoIds(doc.settings);
     const since = Date.now() - 30 * 86400000;
@@ -600,6 +697,7 @@ async function view() {
         secrets: { telegram: !!env('TELEGRAM_BOT_TOKEN'), meta: !!env('META_PAGE_TOKEN'), threads: !!env('THREADS_TOKEN'), pinterest: !!env('PINTEREST_TOKEN') },
         channels: Object.fromEntries(Object.entries(CHANNELS).map(([k, c]) => [k, { name: c.name, auto: c.auto, tag: c.tag, max: c.max, link: c.link !== false }])),
         lastDaily: doc.lastDaily,
+        followers: { ...followersView(doc), error: tgError },
     };
 }
 
@@ -638,6 +736,7 @@ async function testChannel(channel) {
             const me = (await callJson(`${api}/getChatMember?chat_id=${encodeURIComponent(st.telegramChat)}&user_id=${bot.id}`)).result;
             if (me.status !== 'administrator' && me.status !== 'creator') throw new Error(`@${bot.username} is in "${chat.title}" but isn't an administrator. Make it an admin with "Post messages".`);
             if (chat.type === 'channel' && me.can_post_messages === false) throw new Error(`@${bot.username} is an admin of "${chat.title}" but can't post. Turn on "Post messages" for it.`);
+            if (me.can_invite_users === false) throw new Error(`@${bot.username} can post to "${chat.title}", but can't make invite links. Turn on "Invite users via link" (Add subscribers) for it.`);
             return `Connected: @${bot.username} can post to "${chat.title || chat.username}"`;
         }
         case 'facebook': {
@@ -720,6 +819,29 @@ export async function agencyAction(body) {
         }
         case 'agency-test':
             return json({ message: await testChannel(body.channel) });
+        case 'agency-invite-add': {
+            // a separate link for a partner channel that gives us a shoutout
+            const name = String(body.name || '').trim().slice(0, 60);
+            if (!name) return json({ error: 'Write the partner\'s name' }, 400);
+            const st = (await loadAgency()).settings;
+            if (!tgReady(st)) return json({ error: 'Connect Telegram first' }, 400);
+            const base = `p-${sourceSlug(name)}`;
+            const cur = (await loadAgency()).invites;
+            let key = base;
+            for (let i = 2; cur[key]; i++) key = `${base}-${i}`;
+            const inv = { ...(await createInvite(st, key, name)), partner: true };
+            await mutate(d => { d.invites[key] = inv; logLine(d, `New Telegram link for ${name}`); });
+            return json(await view());
+        }
+        case 'agency-invite-remove': {
+            // only partner links can be switched off; their joins stay in the totals
+            const doc = await loadAgency();
+            const inv = doc.invites[body.key];
+            if (!inv?.partner) return json({ error: 'This link can\'t be removed' }, 400);
+            await callJson(`${tgApi()}/revokeChatInviteLink`, form({ chat_id: doc.settings.telegramChat, invite_link: inv.link })).catch(e => console.error('[revoke]', e.message));
+            await mutate(d => { if (d.invites[body.key]) d.invites[body.key].revoked = new Date().toISOString(); });
+            return json(await view());
+        }
     }
     return null;
 }

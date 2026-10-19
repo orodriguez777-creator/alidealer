@@ -587,6 +587,20 @@
             <p class="bulk-hint">People who opened a deal from each platform: ${visits.length ? visits.map(([k, n]) => `<b>${esc(ag.channels[k].name)}</b> ${n}`).join(' · ') : 'none yet'} (last 7 days).</p>
             ${r ? `<div class="ag-report"><div class="ag-angle">Analyst, ${agWhen(r.at)}</div><p>${esc(r.summary)}</p>${r.advice ? `<p><b>Next week:</b> ${esc(r.advice)}</p>` : ''}</div>` : '<p class="bulk-hint">The analyst writes a report every Monday.</p>'}`;
 
+        const f = ag.followers;
+        $('ag-tg').innerHTML = !ag.connected.telegram ? '<p class="bulk-hint">Connect Telegram above to get the links.</p>' : `
+            ${f.error ? `<p class="sg-err">Telegram: ${esc(f.error)}</p>` : ''}
+            <p class="bulk-hint">${f.members !== null ? `<b>${f.members}</b> subscribers now · ` : ''}${f.leaves.week} left in the last 7 days${f.since ? ` · counting since ${agWhen(f.since)}` : ''}</p>
+            <table class="ag-tg-table">
+                <thead><tr><th>Source</th><th>Link</th><th>7 days</th><th>30 days</th><th>Total</th></tr></thead>
+                <tbody>${f.sources.map(s => `<tr class="${s.revoked ? 'ag-off' : ''}">
+                    <td>${esc(s.name)}${s.revoked ? ' (switched off)' : ''}</td>
+                    <td>${s.revoked || s.key === 'direct' ? `<span class="ag-angle">${esc(s.key === 'direct' ? s.link : '')}</span>` : `<button class="btn ghost small" type="button" data-tg-copy="${esc(s.link)}">${icon('copy')} Copy</button>`}
+                        ${s.partner && !s.revoked ? `<button class="btn ghost small" type="button" data-tg-off="${esc(s.key)}">Switch off</button>` : ''}</td>
+                    <td>${s.week}</td><td>${s.month}</td><td>${s.total}</td></tr>`).join('')}</tbody>
+            </table>`;
+        $('ag-tg-add').classList.toggle('hidden', !ag.connected.telegram);
+
         $('ag-log').innerHTML = ag.log.map(l => `<li><span>${agWhen(l.at)}</span> ${esc(l.text)}</li>`).join('') || '<li>Nothing yet.</li>';
     }
 
@@ -647,6 +661,33 @@
         busy(btn, true, 'Checking');
         try { note($('msg'), (await call('agency-test', { channel: btn.dataset.test })).message, 'ok'); }
         catch (err) { note($('msg'), `${ag.channels[btn.dataset.test].name}: ${err.message}`); }
+        finally { busy(btn, false); }
+    });
+
+    $('ag-tg').addEventListener('click', async (e) => {
+        const copy = e.target.closest('button[data-tg-copy]');
+        if (copy) {
+            await navigator.clipboard.writeText(copy.dataset.tgCopy);
+            copy.innerHTML = `${icon('check')} Copied`;
+            setTimeout(() => { copy.innerHTML = `${icon('copy')} Copy`; }, 1500);
+            return;
+        }
+        const off = e.target.closest('button[data-tg-off]');
+        if (!off || !confirm('Switch this link off? People who open it later can\'t join through it. Its joins stay counted.')) return;
+        busy(off, true, 'Switching off');
+        try { agLoaded(await call('agency-invite-remove', { key: off.dataset.tgOff }), false); }
+        catch (err) { note($('msg'), err.message); busy(off, false); }
+    });
+
+    $('ag-tg-add').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = $('ag-tg-add').querySelector('button');
+        busy(btn, true, 'Making the link');
+        try {
+            agLoaded(await call('agency-invite-add', { name: $('ag-tg-name').value }), false);
+            $('ag-tg-name').value = '';
+            note($('msg'), 'Partner link ready. Copy it from the table and send it to the partner.', 'ok');
+        } catch (err) { note($('msg'), err.message); }
         finally { busy(btn, false); }
     });
 

@@ -470,6 +470,12 @@ footer a { color: inherit; }
 .ag-act a.btn { text-decoration: none; }
 .ag-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
 .ag-sp { flex: 1; font-size: 13px; color: var(--ink-soft); }
+.ag-tg-table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 6px 0 10px; }
+.ag-tg-table th, .ag-tg-table td { text-align: start; padding: 7px 6px; border-top: 1px solid var(--line); vertical-align: middle; }
+.ag-tg-table th { font-size: 12px; color: var(--ink-soft); font-weight: 600; border-top: 0; }
+.ag-tg-table td:nth-child(n+3), .ag-tg-table th:nth-child(n+3) { text-align: end; width: 60px; font-variant-numeric: tabular-nums; }
+.ag-tg-table .btn { margin: 2px 4px 2px 0; }
+.ag-tg-add input { flex: 1; min-width: 180px; }
 .ag-guides > li { border-top: 1px solid var(--line); padding: 12px 0; }
 .ag-guides details { font-size: 14px; margin-top: 6px; line-height: 1.5; }
 .ag-guides details summary { cursor: pointer; color: var(--accent); font-size: 13px; }

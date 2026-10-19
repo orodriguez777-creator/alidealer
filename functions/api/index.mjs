@@ -2,7 +2,8 @@
  * Affiliate catalog API
  *
  * Public:  list, GET ?go=<productId> (count the click, redirect to the product page),
- *          GET ?share=[he/]<productId> (link-preview page for one deal)
+ *          GET ?share=[he/]<productId> (link-preview page for one deal),
+ *          GET ?tg=<source> (redirect to that source's Telegram invite link)
  * Admin:   login, detect, save, delete, stats, post, suggestions, suggest-*  (require ADMIN_PASSWORD-derived token)
  * Hourly schedule: the AI marketing agency (agency.mjs); at 04 UTC also the
  *          AliExpress deal suggestions (see "deal suggestions")
@@ -17,7 +18,7 @@
  */
 import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
-import { initAgency, agencyAction, agencyHourly, approvedGuides, recordVisit } from './agency.mjs';
+import { initAgency, agencyAction, agencyHourly, approvedGuides, recordVisit, inviteLink } from './agency.mjs';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-central-1' });
 const DATA_KEY = 'data/products.json';
@@ -750,6 +751,8 @@ export const handler = async (event) => {
     try {
         const go = event.queryStringParameters?.go;
         if (go) return await handleGo(go, event.headers?.['user-agent']);
+        const tg = event.queryStringParameters?.tg;
+        if (tg) return { statusCode: 302, headers: { Location: await inviteLink(tg), 'Cache-Control': 'no-store' }, body: '' };
         const share = event.queryStringParameters?.share;
         if (share) return await handleShare(share, event.queryStringParameters, event.headers?.['user-agent']);
 
