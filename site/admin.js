@@ -489,7 +489,7 @@
 
     function agStatusLine(d) {
         const auto = Object.keys(d.posts).some(c => ag.channels[c].auto && ag.connected[c]);
-        if (d.status === 'waiting') return `${icon('clock')} Waiting for your OK · ${ag.settings.autopilot ? 'Autopilot posts it' : 'slot'} ${agWhen(d.slot)}`;
+        if (d.status === 'waiting') return `${icon('clock')} Waiting for your OK · ${ag.settings.autopilot && !d.hold ? 'Autopilot posts it' : 'posts only after you approve, slot'} ${agWhen(d.slot)}`;
         if (d.status === 'approved') return auto ? `${icon('check')} Approved · posts ${agWhen(d.slot)}` : `${icon('check')} Approved · no automatic channel connected yet, use Copy / Share`;
         if (d.status === 'publishing') return `${icon('loader', 'spin')} Publishing…`;
         const res = Object.entries(d.results || {});

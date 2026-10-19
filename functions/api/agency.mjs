@@ -544,7 +544,7 @@ async function publishDue(deadline) {
     const doc = await loadAgency();
     if (doc.settings.paused) return 0;
     const due = doc.drafts.filter(d => Date.parse(d.slot) <= Date.now()
-        && (d.status === 'approved' || (d.status === 'waiting' && doc.settings.autopilot)));
+        && (d.status === 'approved' || (d.status === 'waiting' && doc.settings.autopilot && !d.hold))); // hold = only after the owner's OK
     let n = 0;
     for (const d of due) {
         if (Date.now() > deadline) break;
