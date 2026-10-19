@@ -15,7 +15,7 @@
  * THREADS_TOKEN, PINTEREST_TOKEN. Channel ids (chat, page, board) live in settings.
  */
 import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-central-1' });
 const AGENCY_KEY = 'data/agency.json';
@@ -425,12 +425,16 @@ async function autoIds(st) {
     const found = {};
     const meta = env('META_PAGE_TOKEN');
     if (meta) {
-        if (!/^\d+$/.test(st.facebookPageId || '')) {
-            const page = await callJson(`${GRAPH}/me?fields=id&access_token=${meta}`).catch(() => ({}));
-            if (page.id) found.facebookPageId = page.id;
+        // a replaced token may belong to another Page, so its ids are looked up again
+        const tokenId = createHash('sha256').update(meta).digest('hex').slice(0, 12);
+        const fresh = st.metaTokenId !== tokenId;
+        if (fresh || !/^\d+$/.test(st.facebookPageId || '')) {
+            // only a Page has a category; a personal (user) token's /me is the person
+            const page = await callJson(`${GRAPH}/me?fields=id,category&access_token=${meta}`).catch(() => ({}));
+            if (page.id && page.category) Object.assign(found, { facebookPageId: page.id, metaTokenId: tokenId, ...(fresh && { instagramId: '' }) });
         }
         const pageId = found.facebookPageId || st.facebookPageId;
-        if (!st.instagramId && /^\d+$/.test(pageId || '')) {
+        if (!(found.instagramId ?? st.instagramId) && /^\d+$/.test(pageId || '')) {
             const r = await callJson(`${GRAPH}/${pageId}?fields=instagram_business_account&access_token=${meta}`).catch(() => ({}));
             if (r.instagram_business_account?.id) found.instagramId = r.instagram_business_account.id;
         }
@@ -719,6 +723,7 @@ function cleanSettings(cur, s = {}) {
         instagramId: id(s.instagramId, cur.instagramId),
         threadsUserId: id(s.threadsUserId, cur.threadsUserId),
         pinterestBoard: id(s.pinterestBoard, cur.pinterestBoard),
+        metaTokenId: cur.metaTokenId,
     };
 }
 
@@ -743,8 +748,12 @@ async function testChannel(channel) {
         }
         case 'facebook': {
             if (!meta) throw new Error('The Facebook Page token is not saved yet');
-            const r = await callJson(`${GRAPH}/${st.facebookPageId}?fields=name&access_token=${meta}`);
-            return `Connected to the Page "${r.name}"`;
+            const me = await callJson(`${GRAPH}/me?fields=id,name,category&access_token=${meta}`).catch(e => {
+                if (/category/.test(e.message)) throw new Error('This is a personal (user) token, not a Page token. In the Graph API Explorer run me/accounts and save the access_token next to your Page.');
+                throw e;
+            });
+            if (me.id !== st.facebookPageId) throw new Error(`The token belongs to the Page "${me.name}", but it hasn't been set up yet. Open the Agency tab again and test once more.`);
+            return `Connected to the Page "${me.name}"`;
         }
         case 'instagram': {
             if (!meta) throw new Error('The Facebook Page token is not saved yet (Instagram posts through it)');
