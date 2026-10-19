@@ -19,3 +19,4 @@ openkbs.local.json
 .agents/*
 !.agents/skills/
 !.agents/skills-off/
+demo/
