@@ -559,7 +559,8 @@ async function handleDelete({ id }) {
 // ---------- deal suggestions ----------
 // Once a day (and on "Find new now") AliExpress is searched per category for
 // best-selling, well-rated, discounted products. They wait in the admin until
-// the owner adds or skips each one; nothing is published on its own.
+// the owner adds or skips each one, unless "add automatically" is on: then the
+// best few each day (most sold and most positive reviews) go on the site by themselves.
 
 const SUGGEST_KEY = 'data/suggestions.json';
 const SUGGEST_MAX_AGE_MS = 14 * 86400000;
@@ -586,7 +587,7 @@ const ALI_CATEGORIES = {
     'Garden': { ids: '125' },
 };
 
-const SUGGEST_DEFAULTS = { categories: [], minOrders: 300, minRating: 95, minDiscount: 30, maxPrice: 50, perCategory: 3 };
+const SUGGEST_DEFAULTS = { categories: [], minOrders: 300, minRating: 95, minDiscount: 30, maxPrice: 50, perCategory: 3, autoAdd: false, autoPerDay: 5 };
 
 async function loadSuggestions() {
     try {
@@ -679,7 +680,7 @@ async function refreshSuggestions(deadline) {
     return fresh;
 }
 
-const suggestView = (doc) => ({ items: doc.items, settings: doc.settings, lastRun: doc.lastRun, categories: Object.keys(ALI_CATEGORIES) });
+const suggestView = (doc) => ({ items: doc.items, settings: { ...SUGGEST_DEFAULTS, ...doc.settings }, lastRun: doc.lastRun, lastAuto: doc.lastAuto, categories: Object.keys(ALI_CATEGORIES) });
 
 async function handleSuggestSettings({ settings = {} }) {
     const doc = await loadSuggestions();
@@ -691,6 +692,8 @@ async function handleSuggestSettings({ settings = {} }) {
         minDiscount: num(settings.minDiscount, 0, 99, SUGGEST_DEFAULTS.minDiscount),
         maxPrice: num(settings.maxPrice, 0, 1e5, 0),
         perCategory: num(settings.perCategory, 1, 20, SUGGEST_DEFAULTS.perCategory),
+        autoAdd: !!settings.autoAdd,
+        autoPerDay: num(settings.autoPerDay, 1, 30, SUGGEST_DEFAULTS.autoPerDay),
     };
     await saveSuggestions(doc);
     return json(suggestView(doc));
@@ -703,6 +706,46 @@ async function dropSuggestions(itemIds, skip) {
     if (skip) doc.skipped = [...ids, ...doc.skipped.filter(id => !ids.has(id))].slice(0, 5000);
     await saveSuggestions(doc);
     return doc;
+}
+
+// Positive reviews matter most, sales next: 98% from 2,000 buyers beats 96% from 20,000.
+// log10 keeps a huge seller from winning on volume alone.
+const dealScore = (i) => (pct(i.rating) / 100) ** 4 * Math.log10((i.orders || 0) + 10);
+
+// The day's best suggestions go on the site by themselves, at most one per category per
+// round so a single category doesn't take over the shop.
+async function autoAddSuggestions(deadline) {
+    const doc = await loadSuggestions();
+    const st = { ...SUGGEST_DEFAULTS, ...doc.settings };
+    const today = new Date().toISOString().slice(0, 10);
+    if (!st.autoAdd || doc.lastAutoAdd === today) return null;
+    doc.lastAutoAdd = today;
+    await saveSuggestions(doc);
+    // only recent finds, so the price shown is still close to AliExpress's
+    const recent = doc.items.filter(i => Date.parse(i.foundAt) > Date.now() - 3 * 86400000);
+    const ranked = recent.sort((a, b) => dealScore(b) - dealScore(a));
+    const picks = [];
+    while (picks.length < st.autoPerDay && ranked.length) {
+        const used = new Set();
+        for (const it of [...ranked]) {
+            if (picks.length >= st.autoPerDay) break;
+            if (used.has(it.category)) continue;
+            used.add(it.category);
+            picks.push(it);
+            ranked.splice(ranked.indexOf(it), 1);
+        }
+    }
+    const added = [], failed = [];
+    for (const it of picks) {
+        if (Date.now() > deadline) break;
+        const r = await handleSuggestAdd({ itemId: it.itemId }).catch(e => ({ statusCode: 500, body: JSON.stringify({ error: e.message }) }));
+        if (r.statusCode === 200) added.push(it.title);
+        else failed.push(`${it.title}: ${JSON.parse(r.body || '{}').error}`);
+    }
+    const fresh = await loadSuggestions();
+    fresh.lastAuto = { at: new Date().toISOString(), added, failed: failed.slice(0, 5) };
+    await saveSuggestions(fresh);
+    return fresh.lastAuto;
 }
 
 async function handleSuggestAdd(body) {
@@ -741,6 +784,13 @@ export const handler = async (event) => {
                 const doc = await refreshSuggestions(Date.now() + 100000);
                 console.log('[suggest] daily run', JSON.stringify(doc.lastRun));
             } catch (e) { console.error('[suggest]', e); }
+        }
+        // after the morning search (and on the first run once it is switched on)
+        if (new Date().getUTCHours() >= 4) {
+            try {
+                const r = await autoAddSuggestions(Date.now() + 90000);
+                if (r) console.log('[suggest] auto-added', JSON.stringify(r));
+            } catch (e) { console.error('[suggest auto]', e); }
         }
         console.log('[agency] hourly run', JSON.stringify(await agencyHourly(deadline)));
         return { ok: true };

@@ -321,7 +321,7 @@
     // ---------- suggestions (found on AliExpress every morning) ----------
 
     let sg = { items: [], settings: {}, categories: [] };
-    const SG_NUMS = ['minOrders', 'minRating', 'minDiscount', 'maxPrice', 'perCategory'];
+    const SG_NUMS = ['minOrders', 'minRating', 'minDiscount', 'maxPrice', 'perCategory', 'autoPerDay'];
 
     function sgStatus() {
         const n = sg.items.length;
@@ -331,7 +331,9 @@
         $('sg-status').textContent = [
             n ? `${n} suggestion${n === 1 ? '' : 's'} waiting` : 'No suggestions waiting',
             run && `last search ${when}, ${run.found} new`,
+            sg.settings.autoAdd && (sg.lastAuto ? `${sg.lastAuto.added.length} added automatically ${new Date(sg.lastAuto.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'auto-add is on'),
         ].filter(Boolean).join(' · ');
+        if (sg.lastAuto?.failed?.length) note($('msg'), `Some deals couldn't be added automatically: ${sg.lastAuto.failed.join('; ')}`, 'warn');
         if (run?.errors?.length) note($('msg'), `Last search had problems: ${run.errors.join('; ')}`, 'warn');
     }
 
@@ -367,6 +369,7 @@
         const st = sg.settings;
         $('sg-cats').innerHTML = sg.categories.map(c => `<label><input type="checkbox" value="${esc(c)}" ${st.categories.includes(c) ? 'checked' : ''}> ${esc(c)}</label>`).join('');
         SG_NUMS.forEach(k => { $(`sg-${k}`).value = st[k] ?? ''; });
+        $('sg-autoAdd').checked = !!st.autoAdd;
     }
 
     function sgLoaded(d, form = true) {
@@ -401,6 +404,7 @@
         try {
             const settings = { categories: [...$('sg-cats').querySelectorAll('input:checked')].map(i => i.value) };
             SG_NUMS.forEach(k => { settings[k] = $(`sg-${k}`).value; });
+            settings.autoAdd = $('sg-autoAdd').checked;
             sgLoaded(await call('suggest-settings', { settings }));
             $('sg-filters').open = false;
             note($('msg'), 'Filters saved. They apply from the next search.', 'ok');

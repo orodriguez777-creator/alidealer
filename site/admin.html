@@ -88,10 +88,15 @@
                                     <label>Price up to ($, 0 = any) <input class="input" id="sg-maxPrice" type="number" min="0"></label>
                                     <label>Per category each day <input class="input" id="sg-perCategory" type="number" min="1" max="20"></label>
                                 </div>
+                                <div class="sg-nums">
+                                    <label><input type="checkbox" id="sg-autoAdd"> Add the best ones to the site automatically</label>
+                                    <label>How many each day <input class="input" id="sg-autoPerDay" type="number" min="1" max="30"></label>
+                                </div>
+                                <p class="bulk-hint">Picked by positive reviews first, then by how many were sold, mixing categories. Prices come from AliExpress at the time of the search.</p>
                                 <div class="row" style="justify-content:flex-end"><button class="btn small" type="submit" id="sg-save">Save filters</button></div>
                             </form>
                         </details>
-                        <p class="bulk-hint">New suggestions arrive every morning. Check the price on the affiliate portal and fix it here if it differs, then press Add. Nothing goes live until you add it.</p>
+                        <p class="bulk-hint">New suggestions arrive every morning. Check the price on the affiliate portal and fix it here if it differs, then press Add. Nothing goes live until you add it, unless "Add the best ones automatically" is on in the filters.</p>
                         <ul class="sg-list" id="sg-list"></ul>
                         <div class="row hidden" id="sg-foot" style="justify-content:flex-end"><button class="btn ghost small" type="button" id="sg-skip-all">Skip all shown</button></div>
                     </section>
@@ -250,6 +255,6 @@
     </dialog>
 
     <script src="/config.js?v=18"></script>
-    <script src="/admin.js?v=26"></script>
+    <script src="/admin.js?v=27"></script>
 </body>
 </html>

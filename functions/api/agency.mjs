@@ -524,7 +524,8 @@ async function publishDraft(id) {
         if (!conn[c] || !d.posts[c] || !st.channels.includes(c)) continue;
         for (const l of langs) {
             const key = langs.length > 1 ? `${c}-${l}` : c;
-            if (results[key]?.ok || !d.posts[c][l]) continue;
+            // a post made under the other language setting counts too, so changing it never reposts
+            if (results[key]?.ok || results[c]?.ok || results[`${c}-${l}`]?.ok || !d.posts[c][l]) continue;
             try {
                 // guide posts carry their own page links instead of a deal
                 const r = await PUBLISH[c](st, d, d.posts[c][l], d.links?.[l] || linkFor(d.productId, l, c), l);
