@@ -522,6 +522,7 @@
                         <div class="c">${esc(d.category)}${d.price ? ` · ${esc(d.price)}` : ''}</div>
                         ${d.angle ? `<div class="ag-angle">Angle: ${esc(d.angle)}</div>` : ''}
                         ${d.notes ? `<div class="ag-angle">Editor: ${esc(d.notes)}</div>` : ''}
+                        ${d.influencer ? `<div class="ag-angle">${icon('check')} ${esc(d.influencer.name)} post (AI photo)${d.productImage ? ` · <a href="${esc(d.productImage)}" target="_blank" rel="noopener">product photo</a>` : ''}</div>` : ''}
                         <div class="ag-state">${agStatusLine(d)}</div>
                     </div>
                 </div>
@@ -543,6 +544,7 @@
                     <span class="ag-sp"></span>
                     ${open ? `<button class="btn ghost small hidden" type="button" data-ag="save">Save edits</button>
                     <button class="btn ghost small" type="button" data-ag="skip">Skip</button>
+                    ${d.productId ? `<button class="btn ghost small" type="button" data-ag="influencer" title="Replace the photo with an AI photo of ${esc(ag.settings.influencerName)} holding this product, and rewrite the posts in her voice">${d.influencer ? 'New' : 'Make'} ${esc(ag.settings.influencerName)} photo</button>` : ''}
                     ${anyAuto ? `<button class="btn ghost small" type="button" data-ag="now">Post now</button>` : ''}
                     ${d.status === 'waiting' ? `<button class="btn small" type="button" data-ag="approve">${icon('check')} Approve</button>` : `<button class="btn ghost small" type="button" data-ag="unapprove">Undo approve</button>`}` : ''}
                 </div>
@@ -615,8 +617,10 @@
         $('ag-perDay').value = st.perDay;
         $('ag-slots').value = st.slots.join(', ');
         $('ag-publishLang').value = st.publishLang;
-        ['autopilot', 'guides', 'paused', 'tiktokComments'].forEach(k => { $(`ag-${k}`).checked = !!st[k]; });
+        ['autopilot', 'guides', 'paused', 'tiktokComments', 'influencer'].forEach(k => { $(`ag-${k}`).checked = !!st[k]; });
         $('ag-tiktokPrivacy').value = st.tiktokPrivacy;
+        $('ag-influencerName').value = st.influencerName || '';
+        $('ag-influencerNameHe').value = st.influencerNameHe || '';
         AG_IDS.forEach(k => { $(`ag-${k}`).value = st[k] || ''; });
         $('ag-chan-boxes').innerHTML = Object.entries(ag.channels).map(([k, c]) => `<label><input type="checkbox" value="${k}" ${st.channels.includes(k) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('');
     }
@@ -653,8 +657,10 @@
                 publishLang: $('ag-publishLang').value,
                 channels: [...$('ag-chan-boxes').querySelectorAll('input:checked')].map(i => i.value),
             };
-            ['autopilot', 'guides', 'paused', 'tiktokComments'].forEach(k => { settings[k] = $(`ag-${k}`).checked; });
+            ['autopilot', 'guides', 'paused', 'tiktokComments', 'influencer'].forEach(k => { settings[k] = $(`ag-${k}`).checked; });
             settings.tiktokPrivacy = $('ag-tiktokPrivacy').value;
+            settings.influencerName = $('ag-influencerName').value.trim();
+            settings.influencerNameHe = $('ag-influencerNameHe').value.trim();
             AG_IDS.forEach(k => { settings[k] = $(`ag-${k}`).value.trim(); });
             agLoaded(await call('agency-settings', { settings }));
             $('ag-settings').open = false;
@@ -755,6 +761,14 @@
                 if (edits) await call('agency-draft', { id: d.id, posts: edits });
                 const r = await call('agency-publish-now', { id: d.id });
                 agLoaded(r.view, false);
+                return;
+            }
+            if (act === 'influencer') {
+                busy(btn, true, 'Making the photo (about a minute)');
+                if (edits) await call('agency-draft', { id: d.id, posts: edits });
+                const { draft } = await call('agency-influencer', { id: d.id });
+                Object.assign(d, draft, { dirty: undefined });
+                renderAgency();
                 return;
             }
             const body = { id: d.id, posts: edits };

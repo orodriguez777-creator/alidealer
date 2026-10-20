@@ -58,6 +58,7 @@ const DEFAULTS = {
     guides: true,
     telegramChat: '', facebookPageId: '', instagramId: '', threadsUserId: '', pinterestBoard: '',
     tiktokUser: '', tiktokPrivacy: 'PUBLIC_TO_EVERYONE', tiktokComments: true,
+    influencer: true, influencerName: 'Noa', influencerNameHe: 'נועה', // AI influencer: one deal a day with her photo
 };
 
 // ---------- storage ----------
@@ -519,6 +520,132 @@ async function ttPhotos(d) {
     return out;
 }
 
+// ---------- AI influencer ----------
+// Once a day one deal is posted with a photo of the influencer (an AI character) holding it,
+// with posts in her voice. Her look comes from one reference portrait in storage.
+
+const INF_PORTRAIT = 'data/influencer/portrait.jpg';
+const INF_MEDIA = 'media/influencer/';
+const INF_MEDIA_URL = 'https://alidealer.com/media/influencer/';
+const INF_CHANNELS = ['telegram', 'facebook', 'instagram', 'threads', 'tiktok', 'pinterest'];
+const infDisclosure = (st) => ({
+    he: `🤖 ${st.influencerNameHe} היא דמות AI של Alidealer`,
+    en: `🤖 ${st.influencerName} is Alidealer's AI character`,
+});
+
+async function s3Bytes(Key) {
+    const r = await s3.send(new GetObjectCommand({ Bucket: process.env.STORAGE_BUCKET, Key }));
+    return Buffer.from(await r.Body.transformToByteArray());
+}
+
+// TikTok takes only jpg/webp photos
+async function toJpeg(buf, mime) {
+    if (/jpe?g/.test(mime)) return buf;
+    const [{ PNG }, jpeg] = await Promise.all([import('pngjs'), import('jpeg-js')]);
+    const png = PNG.sync.read(buf);
+    return jpeg.default.encode({ data: png.data, width: png.width, height: png.height }, 88).data;
+}
+
+async function infImage(scene, productPhoto, productMime) {
+    const portrait = await s3Bytes(INF_PORTRAIT);
+    const prompt = `Same young woman as the FIRST reference photo: exactly the same face, wavy dark-brown shoulder-length hair, same age and look. Her clothes may change to suit the scene.
+She poses naturally with the product from the SECOND reference photo, showing it to the camera (holding it, or standing next to it if it is large). The product must look exactly like in the second photo: same shape, colours and details.
+Scene: ${scene}
+Photorealistic lifestyle photo, like a real Instagram influencer's post shot on a good phone: natural light, real skin, friendly smile, vertical 4:5 frame, the product clearly visible.
+No text, no captions, no logos, no brand names, no watermarks.`;
+    const res = await fetch('https://proxy.openkbs.com/v1/google/models/gemini-3-pro-image:generateContent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENKBS_API_KEY}` },
+        body: JSON.stringify({
+            contents: [{ role: 'user', parts: [
+                { text: prompt },
+                { inlineData: { mimeType: 'image/jpeg', data: portrait.toString('base64') } },
+                { inlineData: { mimeType: productMime, data: productPhoto.toString('base64') } },
+            ] }],
+            generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '4:5' } },
+        }),
+        signal: AbortSignal.timeout(150000),
+    });
+    const data = await res.json().catch(() => ({}));
+    const img = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData;
+    if (!img) throw new Error(`no image came back (${res.status} ${JSON.stringify(data.error || data.candidates?.[0]?.finishReason || data.promptFeedback || '').slice(0, 200)})`);
+    return toJpeg(Buffer.from(img.data, 'base64'), img.mimeType || '');
+}
+
+// Posts in her voice for the automatic channels, plus a scene for the photo
+async function infWriter(st, d, channels) {
+    const specs = channels.map(c => `- "${c}": ${CHANNELS[c].style}. Max ${CHANNELS[c].max - 80} characters.`).join('\n');
+    return ctx.gemini(ctx.writeModel, `You write social posts for ${st.influencerName} (Hebrew: ${st.influencerNameHe}), the AI influencer of www.Alidealer.com, a site of hand-picked AliExpress deals. She is a warm, upbeat Israeli woman in her mid-20s who loves smart finds. Posts are in her first-person voice, sharing a deal she picked for her followers.
+
+Product (English name): ${d.title}
+Product (Hebrew name): ${d.titleHe || d.title}
+Category: ${d.category}
+${d.price ? `Price when we picked it: ${d.price}` : 'Price: not given'}
+${d.angle ? `Angle: ${d.angle}` : ''}
+
+Channels and their style:
+${specs}
+
+Rules:
+${FACT_RULES.replace('we bought, tried or used the product; we found and picked it', `${st.influencerName} bought, tried, owns or used the product; she found and picked it`)}
+- Hebrew: she is a woman, so first-person verbs and adjectives are feminine (מצאתי, בחרתי, אני ממליצה). English: first person.
+- Each channel must read differently.
+
+Also write "scene": one English sentence describing a fitting, everyday setting for a photo of her with this product (place, light, season-appropriate), with no text or brands in it.
+
+Return JSON {"scene": "...", "he": {${channels.map(c => `"${c}": "..."`).join(', ')}}, "en": {same keys}} using \\n for line breaks.`,
+    { generationConfig: { maxOutputTokens: 16000, responseMimeType: 'application/json', temperature: 1, thinkingConfig: { thinkingLevel: 'low' } } }, 90000);
+}
+
+// Turns one draft into an influencer post: her photo becomes the post photo, posts in her voice
+async function makeInfluencer(id) {
+    const doc = await loadAgency();
+    const st = doc.settings;
+    const d = doc.drafts.find(x => x.id === id);
+    if (!d?.productId) throw new Error('Only deal posts can get an influencer photo');
+    if (d.status === 'posted' || d.status === 'publishing') throw new Error('This post is out already');
+    const productUrl = plainImage(d.productImage || d.image);
+    const pr = await fetch(productUrl, { signal: AbortSignal.timeout(20000) });
+    if (!pr.ok) throw new Error(`the product photo didn't load (${pr.status})`);
+    const productMime = (pr.headers.get('content-type') || 'image/jpeg').split(';')[0];
+    const productPhoto = Buffer.from(await pr.arrayBuffer());
+
+    const channels = INF_CHANNELS.filter(c => d.posts[c]);
+    const out = await infWriter(st, d, channels).catch(e => { console.error('[influencer writer]', e.message); return {}; });
+    const jpg = await infImage(String(out.scene || `a cozy, sunny Israeli apartment`).slice(0, 300), productPhoto, productMime);
+    const name = `${d.id}-${Date.now().toString(36)}.jpg`;
+    await s3.send(new PutObjectCommand({ Bucket: process.env.STORAGE_BUCKET, Key: INF_MEDIA + name, Body: jpg, ContentType: 'image/jpeg' }));
+
+    const tag = infDisclosure(st);
+    return mutate(fresh => {
+        const x = fresh.drafts.find(y => y.id === id);
+        if (!x || x.status === 'posted' || x.status === 'publishing') return null;
+        x.productImage ||= x.image;
+        x.image = INF_MEDIA_URL + name;
+        x.influencer = { name: st.influencerName, at: new Date().toISOString() };
+        for (const c of channels) for (const l of ['he', 'en']) {
+            const text = out[l]?.[c] && clip(out[l][c], CHANNELS[c].max - tag[l].length - 2);
+            if (text && x.posts[c]?.[l] !== undefined) x.posts[c][l] = `${text}\n\n${tag[l]}`;
+        }
+        logLine(fresh, `${st.influencerName} photo made for "${x.title}"`);
+        return x;
+    });
+}
+
+// Daily: the first deal post still ahead today (at least 40 min away) gets the influencer
+async function influencerDaily() {
+    const doc = await loadAgency();
+    const today = ilDate(Date.now());
+    if (!doc.settings.influencer || doc.lastInfluencer === today) return '';
+    const d = doc.drafts
+        .filter(x => x.productId && !x.influencer && ['waiting', 'approved'].includes(x.status) && ilDate(Date.parse(x.slot)) === today && Date.parse(x.slot) > Date.now() + 40 * 60000)
+        .sort((a, b) => Date.parse(a.slot) - Date.parse(b.slot))[0];
+    if (!d) return '';
+    await mutate(f => { f.lastInfluencer = today; }); // one try a day, so a failing model never burns credits every hour
+    await makeInfluencer(d.id);
+    return d.title;
+}
+
 const TT_PRIVACY = { PUBLIC_TO_EVERYONE: 'everyone', MUTUAL_FOLLOW_FRIENDS: 'friends', FOLLOWER_OF_CREATOR: 'followers', SELF_ONLY: 'only you' };
 
 async function ttCreator(token) {
@@ -785,6 +912,10 @@ export async function agencyHourly(deadline) {
     if (+now.hour >= 6 && doc.lastDaily !== ilDate(Date.now()) && Date.now() < deadline - 120000) {
         try { const r = await runDaily(); done.push(`drafted ${r.drafts.length}`); } catch (e) { console.error('[agency daily]', e); }
     }
+    if (doc.settings.influencer && Date.now() < deadline - 170000) {
+        try { const t = await influencerDaily(); if (t) done.push(`influencer: ${t}`); }
+        catch (e) { console.error('[agency influencer]', e); await mutate(d => logLine(d, `${d.settings.influencerName} photo failed: ${e.message.slice(0, 150)}`)).catch(() => {}); }
+    }
     // Mondays: the analyst's report and the SEO writer's guide
     if (now.weekday === 'Mon' && +now.hour >= 7 && doc.lastWeekly !== isoWeek(Date.now())) {
         await mutate(d => { d.lastWeekly = isoWeek(Date.now()); });
@@ -838,6 +969,9 @@ function cleanSettings(cur, s = {}) {
         tiktokUser: cur.tiktokUser, // set by connecting the account
         tiktokPrivacy: ['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY'].includes(s.tiktokPrivacy) ? s.tiktokPrivacy : cur.tiktokPrivacy,
         tiktokComments: s.tiktokComments === undefined ? cur.tiktokComments : !!s.tiktokComments,
+        influencer: s.influencer === undefined ? cur.influencer : !!s.influencer,
+        influencerName: String(s.influencerName ?? '').trim().slice(0, 30) || cur.influencerName,
+        influencerNameHe: String(s.influencerNameHe ?? '').trim().slice(0, 30) || cur.influencerNameHe,
     };
 }
 
@@ -945,6 +1079,12 @@ export async function agencyAction(body) {
             });
             if (!g) return json({ error: 'This guide is no longer there' }, 404);
             return json({ guide: g });
+        }
+        case 'agency-influencer': {
+            // the influencer photo + her posts for one draft, on demand
+            const d = await makeInfluencer(body.id);
+            if (!d) return json({ error: 'This post went out while the photo was being made' }, 409);
+            return json({ draft: d });
         }
         case 'agency-test':
             return json({ message: await testChannel(body.channel) });
