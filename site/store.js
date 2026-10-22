@@ -2,7 +2,10 @@
     const $ = (id) => document.getElementById(id);
     const state = { products: [], category: 'All', q: '' };
     // AliExpress serves resized copies: a 480px thumbnail is ~10x lighter than the original photo
-    const thumb = (url) => /^https:\/\/[^/]*aliexpress-media\.com\/.+\.(jpe?g|png|webp)$/i.test(url || '') ? `${url}_480x480q75.jpg` : url;
+    const isAe = (url) => /^https:\/\/[^/]*aliexpress-media\.com\/.+\.(jpe?g|png|webp)$/i.test(url || '');
+    const thumb = (url, px = 480) => isAe(url) ? `${url}_${px}x${px}q75.jpg` : url;
+    // phones show one card across the screen, so they get the sharper size
+    const srcset = (url) => isAe(url) ? `srcset="${esc(thumb(url))} 480w, ${esc(thumb(url, 960))} 960w" sizes="(max-width: 600px) 100vw, 320px"` : '';
 
     // ---------- language: English / Hebrew ----------
 
@@ -171,7 +174,7 @@
             <a class="card" href="${goUrl(p)}" target="_blank" rel="sponsored nofollow noopener" style="animation-delay:${Math.min(i, 8) * 30}ms">
                 <div class="card-img">
                     ${p.image
-                        ? `<img src="${esc(thumb(p.image))}" alt="${esc(titleOf(p))}" ${i < 4 ? 'fetchpriority="high"' : 'loading="lazy"'} referrerpolicy="no-referrer">`
+                        ? `<img src="${esc(thumb(p.image))}" ${srcset(p.image)} alt="${esc(titleOf(p))}" ${i < 4 ? 'fetchpriority="high"' : 'loading="lazy"'} referrerpolicy="no-referrer">`
                         : `<div class="noimg">${icon('image')}</div>`}
                     <span class="card-num">${String(i + 1).padStart(2, '0')}</span>
                     <span class="share-btn" role="button" tabindex="0" data-share="${esc(p.id)}" title="${t('share')}" aria-label="${t('share')}">${icon('share')}</span>
@@ -215,7 +218,7 @@
 
     function showInLucky(p) {
         $('lucky-img').innerHTML = p.image
-            ? `<img src="${esc(thumb(p.image))}" alt="" referrerpolicy="no-referrer">`
+            ? `<img src="${esc(thumb(p.image))}" ${srcset(p.image)} alt="" referrerpolicy="no-referrer">`
             : `<div class="noimg">${icon('image')}</div>`;
         $('lucky-cat').textContent = catName(p.category);
         $('lucky-title').textContent = titleOf(p);
