@@ -88,12 +88,30 @@ async function loadProducts() {
 }
 
 async function saveProducts(products) {
+    await Promise.all([
+        s3.send(new PutObjectCommand({
+            Bucket: process.env.STORAGE_BUCKET,
+            Key: DATA_KEY,
+            Body: JSON.stringify(products),
+            ContentType: 'application/json',
+        })),
+        publishList(products),
+    ]);
+}
+
+// Public copy of the deal list on the CDN (alidealer.com/media/deals.json) so the storefront
+// can show deals without waiting for this function; the page still refreshes from 'list' after.
+const PUBLIC_LIST_KEY = 'media/deals.json';
+let listPublished = false;
+async function publishList(products) {
     await s3.send(new PutObjectCommand({
         Bucket: process.env.STORAGE_BUCKET,
-        Key: DATA_KEY,
-        Body: JSON.stringify(products),
+        Key: PUBLIC_LIST_KEY,
+        Body: JSON.stringify({ products, categories: CATEGORIES }),
         ContentType: 'application/json',
+        CacheControl: 'public, max-age=60',
     }));
+    listPublished = true;
 }
 
 // ---------- detection ----------
@@ -821,6 +839,8 @@ export const handler = async (event) => {
             case 'list': {
                 const products = await loadProducts();
                 await fillHebrewTitles(products);
+                // once per warm container, so the CDN copy exists even before the next save
+                if (!listPublished) await publishList(products).catch(e => console.error('[publishList]', e.message));
                 return json({ products, categories: CATEGORIES });
             }
 

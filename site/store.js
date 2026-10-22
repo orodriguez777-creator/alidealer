@@ -1,6 +1,8 @@
 (() => {
     const $ = (id) => document.getElementById(id);
     const state = { products: [], category: 'All', q: '' };
+    // AliExpress serves resized copies: a 480px thumbnail is ~10x lighter than the original photo
+    const thumb = (url) => /^https:\/\/[^/]*aliexpress-media\.com\/.+\.(jpe?g|png|webp)$/i.test(url || '') ? `${url}_480x480q75.jpg` : url;
 
     // ---------- language: English / Hebrew ----------
 
@@ -134,53 +136,7 @@
     $('lang').addEventListener('click', () => {
         lang = lang === 'he' ? 'en' : 'he';
         localStorage.setItem('lang', lang);
-        // ---------- sharing ----------
-
-    const sharebox = $('sharebox');
-    let sharing = null;
-
-    async function shareDeal(p) {
-        const url = shareLink(p.id, lang);
-        const title = titleOf(p);
-        // phones: the system share sheet (WhatsApp, Instagram, Messages, …)
-        if (navigator.share && matchMedia('(pointer: coarse)').matches) {
-            try { await navigator.share({ title, text: [title, p.price].filter(Boolean).join(' · '), url }); return; }
-            catch (e) { if (e.name === 'AbortError') return; }
-        }
-        sharing = p;
-        const text = encodeURIComponent(`${title}${p.price ? ` · ${p.price}` : ''}\n${url}`);
-        $('share-img').innerHTML = p.image ? `<img src="${esc(p.image)}" alt="" referrerpolicy="no-referrer">` : '';
-        $('share-name').textContent = title;
-        $('share-wa').href = `https://wa.me/?text=${text}`;
-        $('share-tg').href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`;
-        $('share-fb').href = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
-        $('share-copy-label').textContent = t('copyLink');
-        sharebox.showModal();
-    }
-
-    $('share-copy').addEventListener('click', async () => {
-        const url = shareLink(sharing.id, lang);
-        try { await navigator.clipboard.writeText(url); }
-        catch { prompt(t('copyLink'), url); return; }
-        $('share-copy-label').textContent = t('copied');
-    });
-    $('share-close').addEventListener('click', () => sharebox.close());
-    sharebox.addEventListener('click', (e) => { if (e.target === sharebox) sharebox.close(); });
-    $('lucky-share').addEventListener('click', () => { if (lastPick) shareDeal(lastPick); });
-
-    // a shared link (/d/<id>) lands here as /?deal=<id>: show that deal straight away
-    function openSharedDeal() {
-        const p = state.products.find(x => x.id === params.get('deal'));
-        history.replaceState(null, '', location.pathname);
-        if (!p) return;
-        lastPick = p;
-        showInLucky(p);
-        $('lucky-go').href = goUrl(p);
-        $('lucky-label').textContent = t('sharedWithYou');
-        lucky.showModal();
-    }
-
-    applyLang();
+        applyLang();
         renderChips();
         renderGrid();
         if (lastPick && !spinning) { showInLucky(lastPick); $('lucky-label').textContent = pickLabel(); }
@@ -212,10 +168,10 @@
         }
 
         $('grid').innerHTML = items.map((p, i) => `
-            <a class="card" href="${goUrl(p)}" target="_blank" rel="sponsored nofollow noopener" style="animation-delay:${Math.min(i, 16) * 45}ms">
+            <a class="card" href="${goUrl(p)}" target="_blank" rel="sponsored nofollow noopener" style="animation-delay:${Math.min(i, 8) * 30}ms">
                 <div class="card-img">
                     ${p.image
-                        ? `<img src="${esc(p.image)}" alt="${esc(titleOf(p))}" loading="lazy" referrerpolicy="no-referrer">`
+                        ? `<img src="${esc(thumb(p.image))}" alt="${esc(titleOf(p))}" ${i < 4 ? 'fetchpriority="high"' : 'loading="lazy"'} referrerpolicy="no-referrer">`
                         : `<div class="noimg">${icon('image')}</div>`}
                     <span class="card-num">${String(i + 1).padStart(2, '0')}</span>
                     <span class="share-btn" role="button" tabindex="0" data-share="${esc(p.id)}" title="${t('share')}" aria-label="${t('share')}">${icon('share')}</span>
@@ -259,7 +215,7 @@
 
     function showInLucky(p) {
         $('lucky-img').innerHTML = p.image
-            ? `<img src="${esc(p.image)}" alt="" referrerpolicy="no-referrer">`
+            ? `<img src="${esc(thumb(p.image))}" alt="" referrerpolicy="no-referrer">`
             : `<div class="noimg">${icon('image')}</div>`;
         $('lucky-cat').textContent = catName(p.category);
         $('lucky-title').textContent = titleOf(p);
@@ -323,7 +279,7 @@
         }
         sharing = p;
         const text = encodeURIComponent(`${title}${p.price ? ` · ${p.price}` : ''}\n${url}`);
-        $('share-img').innerHTML = p.image ? `<img src="${esc(p.image)}" alt="" referrerpolicy="no-referrer">` : '';
+        $('share-img').innerHTML = p.image ? `<img src="${esc(thumb(p.image))}" alt="" referrerpolicy="no-referrer">` : '';
         $('share-name').textContent = title;
         $('share-wa').href = `https://wa.me/?text=${text}`;
         $('share-tg').href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`;
@@ -356,15 +312,33 @@
 
     applyLang();
 
+    // Deals show at once from the last visit's copy or the CDN copy, then the API refreshes them
+    const CACHE_KEY = 'deals-v1';
+    let shown = '';
+    function showProducts(products, final) {
+        const sig = JSON.stringify(products);
+        if (sig !== shown) {
+            $('grid').classList.toggle('no-anim', !!shown); // no second fade-in on a refresh
+            shown = sig;
+            state.products = products;
+            $('count').textContent = products.length;
+            renderUpdated();
+            renderChips();
+            renderGrid();
+            $('surprise').disabled = !products.length;
+        }
+        // a shared deal may be newer than the cached list, so wait for the API before giving up on it
+        if (params.get('deal') && (final || products.some(p => p.id === params.get('deal')))) openSharedDeal();
+    }
+    try { const c = JSON.parse(localStorage.getItem(CACHE_KEY)); if (c?.length) showProducts(c); } catch {}
+    if (!shown) fetch('/media/deals.json').then(r => r.ok ? r.json() : null).then(d => { if (d?.products?.length && !state.fresh) showProducts(d.products); }).catch(() => {});
+
     api('list').then(({ products }) => {
-        state.products = products;
-        $('count').textContent = products.length;
-        renderUpdated();
-        renderChips();
-        renderGrid();
-        $('surprise').disabled = !products.length;
-        if (params.get('deal')) openSharedDeal();
+        state.fresh = true;
+        showProducts(products, true);
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify(products)); } catch {}
     }).catch(() => {
+        if (shown) return;
         const [h, sub] = t('loadFailed');
         $('grid').innerHTML = `<div class="empty"><h2>${h}</h2><p>${sub}</p></div>`;
     });
