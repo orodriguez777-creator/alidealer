@@ -16,6 +16,8 @@
  */
 import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { randomUUID, createHash } from 'node:crypto';
+import { writeFileSync, rmSync } from 'node:fs';
+import { tools as reelTools, motionClip, render as renderReel } from './reel.mjs';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-central-1' });
 const AGENCY_KEY = 'data/agency.json';
@@ -59,6 +61,7 @@ const DEFAULTS = {
     telegramChat: '', facebookPageId: '', instagramId: '', threadsUserId: '', pinterestBoard: '',
     tiktokUser: '', tiktokPrivacy: 'PUBLIC_TO_EVERYONE', tiktokComments: true,
     influencer: true, influencerName: 'Noa', influencerNameHe: 'נועה', // AI influencer: one deal a day with her photo
+    reels: true, // ...and that post goes out as a short video (reel) where the channel takes one
 };
 
 // ---------- storage ----------
@@ -623,6 +626,8 @@ async function makeInfluencer(id) {
         x.productImage ||= x.image;
         x.image = INF_MEDIA_URL + name;
         x.influencer = { name: st.influencerName, at: new Date().toISOString() };
+        if (st.reels) x.reel = { status: 'pending' }; // a new photo means a new reel
+        else delete x.reel;
         for (const c of channels) for (const l of ['he', 'en']) {
             const text = out[l]?.[c] && clip(out[l][c], CHANNELS[c].max - tag[l].length - 2);
             if (text && x.posts[c]?.[l] !== undefined) x.posts[c][l] = `${text}\n\n${tag[l]}`;
@@ -642,9 +647,104 @@ async function influencerDaily() {
         .sort((a, b) => Date.parse(a.slot) - Date.parse(b.slot))[0];
     if (!d) return '';
     await mutate(f => { f.lastInfluencer = today; }); // one try a day, so a failing model never burns credits every hour
-    await makeInfluencer(d.id);
+    await makeInfluencer(d.id); // its reel is started by the hourly run right after this
     return d.title;
 }
+
+// ---------- Noa reels ----------
+// The influencer post also goes out as a 7.5-second vertical video on the channels that take
+// one: her photo brought to life by a free image-to-video AI, with the product name, price,
+// the site and music on it (see reel.mjs). Making it takes 2-4 minutes, so it runs in its own
+// call of this function, started right after the photo. If the video can't be made or posted,
+// the photo post goes out as before.
+
+const REEL_CHANNELS = ['telegram', 'facebook', 'instagram', 'threads', 'tiktok'];
+// TikTok only pulls media from its verified path, so every channel uses the copy there
+const reelName = (id, lang) => `reel-${id}-${lang}.mp4`;
+const REEL_TEXT = {
+    en: (st) => ({ tagline: 'New deals every day', disclosure: `${st.influencerName} is an AI character` }),
+    he: (st) => ({ tagline: 'דילים חדשים כל יום', disclosure: `${st.influencerNameHe} היא דמות AI` }),
+};
+const REEL_STYLE = 'Photorealistic live-action social media footage, natural realistic human motion, the same woman, consistent face, the product keeps its exact shape and size. Steady camera with a slight push in. No text.';
+
+// a short on-screen product name per language, and how she moves in the clip
+async function reelWriter(d) {
+    return ctx.gemini(ctx.writeModel, `A 5-second vertical video is made from a photo of a young woman showing this product to the camera.
+Product (English): ${d.title}
+Product (Hebrew): ${d.titleHe || d.title}
+
+Return JSON {"motion": "...", "en": "...", "he": "..."}:
+- motion: one English sentence describing simple, natural movement for her in those 5 seconds, using the product as it is in the photo (e.g. she smiles, brings it a little closer to the camera, turns it to show it, nods). No new objects, nobody else, she never covers her face.
+- en: the product's name for an on-screen caption, 2-4 words, no brand codes or model numbers.
+- he: the same in natural Hebrew, 2-4 words.`,
+    { generationConfig: { maxOutputTokens: 2000, responseMimeType: 'application/json', temperature: 0.7, thinkingConfig: { thinkingLevel: 'low' } } }, 40000);
+}
+
+async function makeReel(id) {
+    const d = await mutate(doc => {
+        const x = doc.drafts.find(y => y.id === id);
+        if (!x?.reel || x.status === 'publishing') return null;
+        const r = x.reel;
+        if (r.status === 'making' && Date.parse(r.at) > Date.now() - 8 * 60000) return null; // another call is on it
+        if (!['pending', 'making'].includes(r.status)) return null;
+        if ((r.tries || 0) >= 2) { x.reel = { ...r, status: 'failed' }; return null; }
+        x.reel = { ...r, status: 'making', at: new Date().toISOString(), tries: (r.tries || 0) + 1 };
+        return { ...x, settings: doc.settings };
+    });
+    if (!d) return null;
+    const st = d.settings;
+    const langs = st.publishLang === 'both' ? ['he', 'en'] : [st.publishLang];
+    try {
+        const photoKey = d.image.startsWith(INF_MEDIA_URL) ? INF_MEDIA + d.image.slice(INF_MEDIA_URL.length) : null;
+        if (!photoKey) throw new Error('the post has no influencer photo');
+        const [ff, photo, words] = await Promise.all([reelTools(), s3Bytes(photoKey),
+            reelWriter(d).catch(e => { console.error('[reel writer]', e.message); return {}; })]);
+        const dir = process.env.REEL_DIR || '/tmp/reel';
+        const photoFile = `${dir}/${id}.jpg`;
+        writeFileSync(photoFile, photo);
+        let clipFile = null, note = '';
+        try {
+            const motion = String(words.motion || 'She smiles warmly at the camera and brings the product a little closer to show it, then gives a small friendly nod.').slice(0, 400);
+            writeFileSync(`${dir}/${id}-clip.mp4`, await motionClip(photo, `${motion} ${REEL_STYLE}`));
+            clipFile = `${dir}/${id}-clip.mp4`;
+        } catch (e) {
+            // the free video AI is busy, out of quota or gone: the photo moves instead
+            note = `no AI motion today (${String(e?.message || e).slice(0, 120)})`;
+            console.error('[reel motion]', note);
+        }
+        const out = {};
+        for (const l of langs) {
+            const name = clip(String(words[l] || (l === 'he' && d.titleHe) || d.title), 34);
+            const mp4 = await renderReel(ff, { clip: clipFile, photo: photoFile, out: `${dir}/${reelName(id, l)}`,
+                text: { name, price: d.price || '', ...REEL_TEXT[l](st) } });
+            await s3.send(new PutObjectCommand({ Bucket: process.env.STORAGE_BUCKET, Key: TT_MEDIA + reelName(id, l), Body: mp4, ContentType: 'video/mp4', CacheControl: 'public, max-age=86400' }));
+            out[l] = `${TT_MEDIA_URL}${reelName(id, l)}?v=${Date.now().toString(36)}`;
+        }
+        return mutate(doc => {
+            const x = doc.drafts.find(y => y.id === id);
+            if (!x) return null;
+            x.reel = { status: 'ready', motion: !!clipFile, ...out, at: new Date().toISOString(), ...(note && { note }) };
+            logLine(doc, `${st.influencerName} reel made for "${x.title}"${clipFile ? '' : ' (photo only, the video AI was not available)'}`);
+            return x;
+        });
+    } catch (e) {
+        console.error('[reel]', e);
+        await mutate(doc => {
+            const x = doc.drafts.find(y => y.id === id);
+            if (!x?.reel) return;
+            x.reel = { ...x.reel, status: x.reel.tries >= 2 ? 'failed' : 'pending', error: String(e.message).slice(0, 200) };
+            logLine(doc, `${st.influencerName} reel failed for "${x.title}": ${String(e.message).slice(0, 150)}`);
+        });
+        throw e;
+    } finally {
+        for (const f of [`${id}.jpg`, `${id}-clip.mp4`, ...langs.flatMap(l => [reelName(id, l), `${reelName(id, l)}.ass`])]) rmSync(`${process.env.REEL_DIR || '/tmp/reel'}/${f}`, { force: true });
+    }
+}
+
+// reels still to make, nearest post first (a waiting reel holds its post back up to an hour)
+const reelDue = (doc) => doc.drafts
+    .filter(x => ['pending', 'making'].includes(x.reel?.status) && ['waiting', 'approved'].includes(x.status) && Date.parse(x.slot) > Date.now() - 60 * 60000)
+    .sort((a, b) => Date.parse(a.slot) - Date.parse(b.slot));
 
 const TT_PRIVACY = { PUBLIC_TO_EVERYONE: 'everyone', MUTUAL_FOLLOW_FRIENDS: 'friends', FOLLOWER_OF_CREATOR: 'followers', SELF_ONLY: 'only you' };
 
@@ -652,11 +752,28 @@ async function ttCreator(token) {
     return (await ttCall('/post/publish/creator_info/query/', { token })).data;
 }
 
+// Meta processes an uploaded video before it can be published
+async function videoReady(url, field) {
+    for (let i = 0; i < 18; i++) {
+        await sleep(5000);
+        const r = await callJson(url).catch(() => ({}));
+        if (r[field] === 'FINISHED') return;
+        if (['ERROR', 'EXPIRED'].includes(r[field])) throw new Error(`the video was rejected (${r.error_message || r.status || r[field]})`);
+    }
+    throw new Error('the video was still processing after 90 seconds');
+}
+
+// `video` is the reel's url when the post has one; each channel falls back to the photo
 const PUBLISH = {
-    async telegram(st, d, text, link) {
+    async telegram(st, d, text, link, lang, video) {
         const api = `https://api.telegram.org/bot${env('TELEGRAM_BOT_TOKEN')}`;
         const caption = `${text}\n\n👉 ${link}`;
         let r;
+        if (video) {
+            r = await callJson(`${api}/sendVideo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: st.telegramChat, video, caption, supports_streaming: true, width: 720, height: 1280 }) });
+            const user = r.result?.chat?.username;
+            return { id: String(r.result?.message_id || ''), url: user ? `https://t.me/${user}/${r.result.message_id}` : '', video: true };
+        }
         try {
             r = await callJson(`${api}/sendPhoto`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: st.telegramChat, photo: d.image, caption }) });
         } catch (e) {
@@ -666,25 +783,35 @@ const PUBLISH = {
         const user = r.result?.chat?.username;
         return { id: String(r.result?.message_id || ''), url: user ? `https://t.me/${user}/${r.result.message_id}` : '' };
     },
-    async facebook(st, d, text, link) {
+    async facebook(st, d, text, link, lang, video) {
+        if (video) {
+            const v = await callJson(`${GRAPH}/${st.facebookPageId}/videos`, form({ file_url: video, description: `${text}\n\n👉 ${link}`, access_token: env('META_PAGE_TOKEN') }));
+            return { id: v.id, url: `https://www.facebook.com/${st.facebookPageId}/videos/${v.id}`, video: true };
+        }
         const r = await callJson(`${GRAPH}/${st.facebookPageId}/photos`, form({ url: d.image, message: `${text}\n\n👉 ${link}`, access_token: env('META_PAGE_TOKEN') }));
         return { id: r.post_id || r.id, url: `https://www.facebook.com/${r.post_id || r.id}` };
     },
-    async instagram(st, d, text) {
+    async instagram(st, d, text, link, lang, video) {
         const token = env('META_PAGE_TOKEN');
-        const box = await callJson(`${GRAPH}/${st.instagramId}/media`, form({ image_url: plainImage(d.image), caption: text, access_token: token }));
+        const box = await callJson(`${GRAPH}/${st.instagramId}/media`, form(video
+            ? { media_type: 'REELS', video_url: video, caption: text, share_to_feed: 'true', access_token: token }
+            : { image_url: plainImage(d.image), caption: text, access_token: token }));
+        if (video) await videoReady(`${GRAPH}/${box.id}?fields=status_code,status&access_token=${token}`, 'status_code');
         let r;
         for (let i = 0; ; i++) { // the photo is fetched in the background; publishing too early fails
             try { r = await callJson(`${GRAPH}/${st.instagramId}/media_publish`, form({ creation_id: box.id, access_token: token })); break; }
             catch (e) { if (i >= 4) throw e; await sleep(4000); }
         }
         const info = await callJson(`${GRAPH}/${r.id}?fields=permalink&access_token=${token}`).catch(() => ({}));
-        return { id: r.id, url: info.permalink || '' };
+        return { id: r.id, url: info.permalink || '', ...(video && { video: true }) };
     },
-    async threads(st, d, text, link) {
+    async threads(st, d, text, link, lang, video) {
         const token = env('THREADS_TOKEN');
         const base = `https://graph.threads.net/v1.0/${st.threadsUserId}`;
-        const box = await callJson(`${base}/threads`, form({ media_type: 'IMAGE', image_url: plainImage(d.image), text: `${text}\n\n${link}`, access_token: token }));
+        const box = await callJson(`${base}/threads`, form(video
+            ? { media_type: 'VIDEO', video_url: video, text: `${text}\n\n${link}`, access_token: token }
+            : { media_type: 'IMAGE', image_url: plainImage(d.image), text: `${text}\n\n${link}`, access_token: token }));
+        if (video) await videoReady(`https://graph.threads.net/v1.0/${box.id}?fields=status,error_message&access_token=${token}`, 'status');
         let r;
         for (let i = 0; ; i++) {
             await sleep(i ? 6000 : 3000);
@@ -692,14 +819,26 @@ const PUBLISH = {
             catch (e) { if (i >= 4) throw e; }
         }
         const info = await callJson(`https://graph.threads.net/v1.0/${r.id}?fields=permalink&access_token=${token}`).catch(() => ({}));
-        return { id: r.id, url: info.permalink || '' };
+        return { id: r.id, url: info.permalink || '', ...(video && { video: true }) };
     },
-    async tiktok(st, d, text) {
+    async tiktok(st, d, text, link, lang, video) {
         const token = await ttToken();
         const creator = await ttCreator(token);
-        const photos = await ttPhotos(d);
+        const photos = video ? null : await ttPhotos(d);
         const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-        const post = (privacy) => ttCall('/post/publish/content/init/', {
+        const post = (privacy) => video ? ttCall('/post/publish/video/init/', {
+            token,
+            body: {
+                post_info: {
+                    title: text.slice(0, 2200), // a video's title is its whole caption
+                    privacy_level: privacy,
+                    disable_comment: !st.tiktokComments,
+                    video_cover_timestamp_ms: 2500,
+                    brand_content_toggle: false, brand_organic_toggle: true,
+                },
+                source_info: { source: 'PULL_FROM_URL', video_url: video },
+            },
+        }) : ttCall('/post/publish/content/init/', {
             token,
             body: {
                 media_type: 'PHOTO', post_mode: 'DIRECT_POST',
@@ -723,7 +862,7 @@ const PUBLISH = {
             privacy = 'SELF_ONLY';
             r = await post(privacy);
         }
-        return { id: r.data.publish_id, url: creator.creator_username ? `https://www.tiktok.com/@${creator.creator_username}` : '', ...(privacy === 'SELF_ONLY' && { note: 'private (only you can see it)' }) };
+        return { id: r.data.publish_id, url: creator.creator_username ? `https://www.tiktok.com/@${creator.creator_username}` : '', ...(privacy === 'SELF_ONLY' && { note: 'private (only you can see it)' }), ...(video && { video: true }) };
     },
     async pinterest(st, d, text, link, lang) {
         const r = await callJson('https://api.pinterest.com/v5/pins', {
@@ -755,6 +894,7 @@ async function publishDraft(id) {
     const conn = connection(st);
     const langs = st.publishLang === 'both' ? ['he', 'en'] : [st.publishLang];
     const results = { ...d.results };
+    const jobs = [];
     for (const c of Object.keys(PUBLISH)) {
         if (!conn[c] || !d.posts[c] || !st.channels.includes(c)) continue;
         // TikTok gets one slideshow per deal (two near-identical ones look like spam), and guides have no product photos
@@ -763,16 +903,28 @@ async function publishDraft(id) {
             const key = langs.length > 1 ? `${c}-${l}` : c;
             // a post made under the other language setting counts too, so changing it never reposts
             if (results[key]?.ok || results[c]?.ok || results[`${c}-${l}`]?.ok || !d.posts[c][l]) continue;
-            try {
+            const video = d.reel?.status === 'ready' && REEL_CHANNELS.includes(c) ? d.reel[l] || '' : '';
+            // channels post side by side: a video can take a minute to be processed
+            jobs.push((async () => {
                 // guide posts carry their own page links instead of a deal
-                const r = await PUBLISH[c](st, d, d.posts[c][l], d.links?.[l] || linkFor(d.productId, l, c), l);
-                results[key] = { ok: true, ...r, at: new Date().toISOString() };
-            } catch (e) {
-                console.error(`[publish ${key}]`, e.message);
-                results[key] = { ok: false, error: e.message.slice(0, 300), at: new Date().toISOString() };
-            }
+                const post = (v) => PUBLISH[c](st, d, d.posts[c][l], d.links?.[l] || linkFor(d.productId, l, c), l, v);
+                try {
+                    let r;
+                    try { r = await post(video); }
+                    catch (e) {
+                        if (!video) throw e;
+                        console.error(`[publish ${key} video]`, e.message);
+                        r = { ...await post(''), note: `photo, the video failed: ${e.message.slice(0, 150)}` };
+                    }
+                    results[key] = { ok: true, ...r, at: new Date().toISOString() };
+                } catch (e) {
+                    console.error(`[publish ${key}]`, e.message);
+                    results[key] = { ok: false, error: e.message.slice(0, 300), at: new Date().toISOString() };
+                }
+            })());
         }
     }
+    await Promise.all(jobs);
     return mutate(doc => {
         const x = doc.drafts.find(y => y.id === id);
         if (!x) return null;
@@ -791,10 +943,11 @@ async function publishDue(deadline) {
     const doc = await loadAgency();
     if (doc.settings.paused) return 0;
     const due = doc.drafts.filter(d => Date.parse(d.slot) <= Date.now()
-        && (d.status === 'approved' || (d.status === 'waiting' && doc.settings.autopilot && !d.hold))); // hold = only after the owner's OK
+        && (d.status === 'approved' || (d.status === 'waiting' && doc.settings.autopilot && !d.hold)) // hold = only after the owner's OK
+        && !reelDue(doc).includes(d)); // its reel is still being made
     let n = 0;
     for (const d of due) {
-        if (Date.now() > deadline) break;
+        if (Date.now() > deadline - (d.reel?.status === 'ready' ? 60000 : 0)) break; // videos take longer to post
         if (await publishDraft(d.id)) n++;
     }
     return n;
@@ -916,6 +1069,9 @@ export async function agencyHourly(deadline) {
         try { const t = await influencerDaily(); if (t) done.push(`influencer: ${t}`); }
         catch (e) { console.error('[agency influencer]', e); await mutate(d => logLine(d, `${d.settings.influencerName} photo failed: ${e.message.slice(0, 150)}`)).catch(() => {}); }
     }
+    // a reel that is queued or whose maker stopped half way gets another go
+    const reel = reelDue(await loadAgency()).find(x => x.reel.status === 'pending' || Date.parse(x.reel.at) < Date.now() - 8 * 60000);
+    if (reel) { await ctx.selfCall({ action: 'agency-reel', id: reel.id }); done.push(`reel started: ${reel.title}`); }
     // Mondays: the analyst's report and the SEO writer's guide
     if (now.weekday === 'Mon' && +now.hour >= 7 && doc.lastWeekly !== isoWeek(Date.now())) {
         await mutate(d => { d.lastWeekly = isoWeek(Date.now()); });
@@ -972,6 +1128,7 @@ function cleanSettings(cur, s = {}) {
         influencer: s.influencer === undefined ? cur.influencer : !!s.influencer,
         influencerName: String(s.influencerName ?? '').trim().slice(0, 30) || cur.influencerName,
         influencerNameHe: String(s.influencerNameHe ?? '').trim().slice(0, 30) || cur.influencerNameHe,
+        reels: s.reels === undefined ? cur.reels : !!s.reels,
     };
 }
 
@@ -1084,6 +1241,14 @@ export async function agencyAction(body) {
             // the influencer photo + her posts for one draft, on demand
             const d = await makeInfluencer(body.id);
             if (!d) return json({ error: 'This post went out while the photo was being made' }, 409);
+            if (d.reel) await ctx.selfCall({ action: 'agency-reel', id: d.id });
+            return json({ draft: d });
+        }
+        case 'agency-reel': {
+            // makes one reel; started by the function itself (see ctx.selfCall), so it gets its own 5 minutes.
+            // redo: make it again from scratch (an influencer post only)
+            if (body.redo) await mutate(doc => { const x = doc.drafts.find(y => y.id === body.id); if (x?.influencer) x.reel = { status: 'pending' }; });
+            const d = await makeReel(body.id);
             return json({ draft: d });
         }
         case 'agency-test':

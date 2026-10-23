@@ -504,6 +504,12 @@
             : `<span class="ag-bad" title="${esc(r.error)}">${icon('alert')} ${esc(k)}: ${esc(r.error)}</span>`).join(' · ');
     }
 
+    function agReelLine(r) {
+        if (r.status === 'ready') return `${icon('check')} Reel ready${r.motion ? '' : ' (moving photo, the video AI was not available)'}: ${['he', 'en'].filter(l => r[l]).map(l => `<a href="${esc(r[l])}" target="_blank" rel="noopener">${l === 'he' ? 'Hebrew' : 'English'}</a>`).join(' · ')}`;
+        if (r.status === 'failed') return `<span class="ag-bad" title="${esc(r.error || '')}">${icon('alert')} Reel failed, the photo is posted instead${r.error ? `: ${esc(r.error)}` : ''}</span>`;
+        return `${icon('loader', 'spin')} Reel being made (2-4 minutes)${r.error ? `, trying again after: ${esc(r.error)}` : ''}`;
+    }
+
     function agDraftHtml(d) {
         const chans = Object.keys(d.posts);
         const t = agTab[d.id] ||= { ch: chans[0], lang: 'he' };
@@ -523,6 +529,7 @@
                         ${d.angle ? `<div class="ag-angle">Angle: ${esc(d.angle)}</div>` : ''}
                         ${d.notes ? `<div class="ag-angle">Editor: ${esc(d.notes)}</div>` : ''}
                         ${d.influencer ? `<div class="ag-angle">${icon('check')} ${esc(d.influencer.name)} post (AI photo)${d.productImage ? ` · <a href="${esc(d.productImage)}" target="_blank" rel="noopener">product photo</a>` : ''}</div>` : ''}
+                        ${d.reel ? `<div class="ag-angle">${agReelLine(d.reel)}</div>` : ''}
                         <div class="ag-state">${agStatusLine(d)}</div>
                     </div>
                 </div>
@@ -617,7 +624,7 @@
         $('ag-perDay').value = st.perDay;
         $('ag-slots').value = st.slots.join(', ');
         $('ag-publishLang').value = st.publishLang;
-        ['autopilot', 'guides', 'paused', 'tiktokComments', 'influencer'].forEach(k => { $(`ag-${k}`).checked = !!st[k]; });
+        ['autopilot', 'guides', 'paused', 'tiktokComments', 'influencer', 'reels'].forEach(k => { $(`ag-${k}`).checked = !!st[k]; });
         $('ag-tiktokPrivacy').value = st.tiktokPrivacy;
         $('ag-influencerName').value = st.influencerName || '';
         $('ag-influencerNameHe').value = st.influencerNameHe || '';
@@ -657,7 +664,7 @@
                 publishLang: $('ag-publishLang').value,
                 channels: [...$('ag-chan-boxes').querySelectorAll('input:checked')].map(i => i.value),
             };
-            ['autopilot', 'guides', 'paused', 'tiktokComments', 'influencer'].forEach(k => { settings[k] = $(`ag-${k}`).checked; });
+            ['autopilot', 'guides', 'paused', 'tiktokComments', 'influencer', 'reels'].forEach(k => { settings[k] = $(`ag-${k}`).checked; });
             settings.tiktokPrivacy = $('ag-tiktokPrivacy').value;
             settings.influencerName = $('ag-influencerName').value.trim();
             settings.influencerNameHe = $('ag-influencerNameHe').value.trim();

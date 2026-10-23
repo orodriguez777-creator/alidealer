@@ -1,6 +1,7 @@
 {
   "type": "module",
   "dependencies": {
+    "@gradio/client": "^2.7.1",
     "jpeg-js": "^0.4.4",
     "pngjs": "^7.0.0"
   }

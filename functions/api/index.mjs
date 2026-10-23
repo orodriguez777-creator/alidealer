@@ -792,7 +792,15 @@ async function handleSuggestAdd(body) {
     return saved;
 }
 
+// This function's own URL (also in site/store.js), for work that needs its own 5 minutes
+const SELF_URL = 'https://ghzfcfbdwidurfqkjaateras4m0hnndz.lambda-url.eu-central-1.on.aws/';
+
 initAgency({
+    // starts an admin action in a separate call and doesn't wait for it: the call keeps running
+    selfCall: (body) => fetch(SELF_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${issueToken()}` },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(3000),
+    }).then(() => {}, () => {}),
     gemini, loadProducts, foldClicks, shareUrl, json, model: AI_MODEL, writeModel: TRANSLATE_MODEL,
     // extra product photos for TikTok slideshows
     productImages: async (itemId) => {
