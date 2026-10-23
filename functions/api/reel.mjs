@@ -99,7 +99,7 @@ export async function render(ff, { clip, photo, text, out }) {
     const filter = `${src},split[a][b];` +
         `[a]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=28:2,eq=brightness=-0.18[bg];` +
         `[b]scale=${W}:${W * 5 / 4}:force_original_aspect_ratio=increase,crop=${W}:${W * 5 / 4}[fg];` +
-        `[bg][fg]overlay=0:(H-h)/2,ass=${ass}:fontsdir=${DIR}/fonts,format=yuv420p[v];` +
+        `[bg][fg]overlay=0:(H-h)/2,setsar=1,ass=${ass}:fontsdir=${DIR}/fonts,format=yuv420p[v];` +
         `[1:a]atrim=0:${REEL_LEN},asetpts=PTS-STARTPTS,volume=0.6,afade=t=in:d=0.3,afade=t=out:st=${REEL_LEN - 1.2}:d=1.2[au]`;
     const input = clip ? ['-i', clip] : ['-loop', '1', '-framerate', String(FPS), '-t', String(REEL_LEN + 1), '-i', photo];
     await run(ff, ['-hide_banner', '-loglevel', 'error', '-y', ...input, '-stream_loop', '-1', '-i', `${DIR}/music.m4a`,

@@ -918,8 +918,8 @@ async function publishDraft(id) {
                     }
                     results[key] = { ok: true, ...r, at: new Date().toISOString() };
                 } catch (e) {
-                    console.error(`[publish ${key}]`, e.message);
-                    results[key] = { ok: false, error: e.message.slice(0, 300), at: new Date().toISOString() };
+                    console.error(`[publish ${key}]`, e.code, e.message);
+                    results[key] = { ok: false, error: `${e.code && !e.message.includes(e.code) ? `${e.code}: ` : ''}${e.message}`.slice(0, 300), at: new Date().toISOString() };
                 }
             })());
         }
