@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 const SITE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'site');
 const ORIGIN = 'https://alidealer.com';
 const API = 'https://ghzfcfbdwidurfqkjaateras4m0hnndz.lambda-url.eu-central-1.on.aws/';
-const ASSET_V = 24;
+const ASSET_V = 26;
+const INSTAGRAM = 'https://www.instagram.com/alidealer2026/';
 const CONTACT = 'orodriguez777@gmail.com';
 const POLICY_DATE = { en: 'October 13, 2026', he: '13 באוקטובר 2026' };
 
@@ -30,7 +31,7 @@ const CATEGORY_HE = {
 
 const T = {
     en: {
-        tgJoin: 'Join on Telegram', tgBandTitle: 'New deals every day on Telegram', tgBandText: 'Join our channel and get the best AliExpress finds straight to your phone. It’s free.',
+        tgJoin: 'Join on Telegram', tgBandTitle: 'New deals every day on Telegram and Instagram', igFollow: 'Instagram', igFollowBtn: 'Follow on Instagram', tgBandText: 'Join our channel and get the best AliExpress finds straight to your phone. It’s free.',
         home: 'Home', slogan: 'Only the best deals', switchTo: 'עברית', switchLang: 'he',
         seeOn: 'See on AliExpress', categories: 'Browse by category', allDeals: 'All deals',
         priceNote: 'Price as listed on the AliExpress affiliate portal when we picked it. The price on the AliExpress site can differ and may even be cheaper, so check the final price there.',
@@ -47,7 +48,7 @@ const T = {
         priceDisclaimer: 'Price note: our prices come from the AliExpress affiliate portal and can differ from the AliExpress site, where the price may even be cheaper. We list only top-selling AliExpress products.',
     },
     he: {
-        tgJoin: 'הצטרפו בטלגרם', tgBandTitle: 'דילים חדשים כל יום בטלגרם', tgBandText: 'הצטרפו לערוץ שלנו וקבלו את המציאות הכי טובות מ-AliExpress ישר לטלפון. בחינם.',
+        tgJoin: 'הצטרפו בטלגרם', tgBandTitle: 'דילים חדשים כל יום בטלגרם ובאינסטגרם', igFollow: 'אינסטגרם', igFollowBtn: 'עקבו באינסטגרם', tgBandText: 'הצטרפו לערוץ שלנו וקבלו את המציאות הכי טובות מ-AliExpress ישר לטלפון. בחינם.',
         home: 'דף הבית', slogan: 'רק הדילים הכי טובים', switchTo: 'English', switchLang: 'en',
         seeOn: 'לצפייה ב-AliExpress', categories: 'קטגוריות', allDeals: 'כל הדילים',
         priceNote: 'המחיר כפי שהופיע בפורטל השותפים של AliExpress כשבחרנו את המוצר. המחיר באתר AliExpress עצמו עשוי להיות שונה ואפילו זול יותר, לכן כדאי לבדוק את המחיר הסופי שם.',
@@ -137,6 +138,7 @@ function layout({ lang, title, description, path, altPath, image, jsonLd, body, 
             </a>
             <div class="masthead-meta">
                 <a class="lang tg-join" href="/api?tg=site" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>${t.tgJoin}</a>
+                <a class="lang ig-join" href="${INSTAGRAM}" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24"><rect width="20" height="20" x="2" y="2" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/></svg>${t.igFollow}</a>
                 <a class="lang" href="${he ? enPath : hePath}" hreflang="${t.switchLang}" lang="${t.switchLang}">
                     <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
                     ${t.switchTo}
@@ -165,6 +167,7 @@ ${cats.map(c => `                <li><a href="${catPath(c, lang)}">${esc(catName
             <span class="tg-logo"><svg class="icon" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></span>
             <div><strong>${t.tgBandTitle}</strong><span>${t.tgBandText}</span></div>
             <a class="btn tg-btn" href="/api?tg=site" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>${t.tgJoin}</a>
+            <a class="btn ig-btn" href="${INSTAGRAM}" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24"><rect width="20" height="20" x="2" y="2" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/></svg>${t.igFollowBtn}</a>
         </section>
 
         <footer>

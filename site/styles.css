@@ -543,7 +543,6 @@ footer a { color: inherit; }
 #actions { display: flex; gap: 8px; }
 
 /* ---------- Telegram channel: header button, band above the footer, invitation after a deal click ---------- */
-.tg-join { margin-inline-end: 8px; }
 .tg-band {
     display: flex; align-items: center; gap: 18px;
     margin: 8px 0 28px; padding: 20px 24px;
@@ -562,6 +561,13 @@ footer a { color: inherit; }
 .btn.tg-btn { background: #2aabee; color: #fff; border-color: #2aabee; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .btn.tg-btn:hover { background: #1d93d2; border-color: #1d93d2; }
 .tg-btn .icon { width: 18px; height: 18px; }
+.tg-join, .ig-join { margin-inline-end: 8px; }
+.btn.ig-btn {
+    background: linear-gradient(45deg, #f9a825, #e1306c 50%, #833ab4); color: #fff; border-color: transparent;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+}
+.btn.ig-btn:hover { filter: brightness(.92); }
+.ig-btn .icon { width: 18px; height: 18px; }
 .tg-invite {
     position: fixed; z-index: 50; inset-inline: 16px; bottom: 16px; margin-inline: auto;
     max-width: 420px; display: flex; gap: 14px; align-items: flex-start;
@@ -579,5 +585,5 @@ footer a { color: inherit; }
 @media (max-width: 600px) {
     .tg-band { flex-wrap: wrap; padding: 18px; }
     .tg-band > div { flex-basis: calc(100% - 66px); }
-    .tg-band .tg-btn { width: 100%; justify-content: center; }
+    .tg-band .tg-btn, .tg-band .ig-btn { width: 100%; justify-content: center; }
 }
