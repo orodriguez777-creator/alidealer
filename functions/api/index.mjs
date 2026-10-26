@@ -19,6 +19,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import { initAgency, agencyAction, agencyHourly, approvedGuides, recordVisit, inviteLink } from './agency.mjs';
+import { initGroupBot, groupHook, groupDaily, groupAction } from './groupbot.mjs';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-central-1' });
 const DATA_KEY = 'data/products.json';
@@ -810,6 +811,8 @@ initAgency({
     },
 });
 
+initGroupBot({ shareUrl, loadProducts, selfUrl: SELF_URL });
+
 export const handler = async (event) => {
     if (event.source === 'schedule') {
         const deadline = Date.now() + 280000;
@@ -827,12 +830,16 @@ export const handler = async (event) => {
             } catch (e) { console.error('[suggest auto]', e); }
         }
         console.log('[agency] hourly run', JSON.stringify(await agencyHourly(deadline)));
+        // after the agency, so today's channel post is there to share
+        try { console.log('[groupbot] daily run', await groupDaily(deadline + 15000)); }
+        catch (e) { console.error('[groupbot]', e); }
         return { ok: true };
     }
 
     if (event.requestContext?.http?.method === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
 
     try {
+        if (event.queryStringParameters?.gb === 'hook') return await groupHook(event);
         const go = event.queryStringParameters?.go;
         if (go) return await handleGo(go, event.headers?.['user-agent']);
         const tg = event.queryStringParameters?.tg;
@@ -880,6 +887,7 @@ export const handler = async (event) => {
             case 'suggest-add': return await handleSuggestAdd(body);
             case 'suggest-skip': return json(suggestView(await dropSuggestions(Array.isArray(body.itemIds) ? body.itemIds : [], true)));
             default:
+                if (String(body.action).startsWith('groupbot')) return json(await groupAction(body));
                 if (String(body.action).startsWith('agency')) {
                     const res = await agencyAction(body);
                     if (res) return res;

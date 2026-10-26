@@ -641,7 +641,50 @@
     async function loadAgency() {
         try { agLoaded(await call('agency')); }
         catch (err) { $('ag-status').textContent = `The agency couldn't load: ${err.message}`; }
+        loadGroupBot();
     }
+
+    // ---------- deal bot for other people's groups ----------
+
+    function renderGroupBot(g) {
+        if (!g.configured) {
+            $('gb').innerHTML = '<p class="bulk-hint">Not set up yet: create the bot in @BotFather and save its token.</p>';
+            return;
+        }
+        const active = g.groups.filter(x => x.active);
+        $('gb').innerHTML = `
+            ${g.error ? `<p class="sg-err">Telegram: ${esc(g.error)}</p>` : ''}
+            ${g.bot ? `<p class="bulk-hint">Bot <a href="${esc(g.bot.link)}" target="_blank" rel="noopener">@${esc(g.bot.username)}</a> · send group admins this link:
+                <button class="btn ghost small" type="button" data-gb-copy="${esc(g.bot.addLink)}">${icon('copy')} Copy add link</button></p>` : ''}
+            <p class="bulk-hint"><b>${active.length}</b> group${active.length === 1 ? '' : 's'} · <b>${g.reach}</b> members reached · ${g.visits.week} visits in 7 days, ${g.visits.month} in 30 days</p>
+            ${g.groups.length ? `<table class="ag-tg-table">
+                <thead><tr><th>Group</th><th>Members</th><th>Language</th><th>Hour</th><th>Deals sent</th><th></th></tr></thead>
+                <tbody>${g.groups.map(x => `<tr class="${x.active ? '' : 'ag-off'}">
+                    <td>${x.username ? `<a href="https://t.me/${esc(x.username)}" target="_blank" rel="noopener">${esc(x.title)}</a>` : esc(x.title)} <span class="ag-angle">${esc(x.type)}</span>${x.active ? '' : `<br><span class="ag-angle">Off: ${esc(x.reason || '')}</span>`}</td>
+                    <td>${x.members ?? ''}</td><td>${x.lang === 'he' ? 'Hebrew' : 'English'}</td><td>${String(x.hour).padStart(2, '0')}:00</td><td>${x.count}</td>
+                    <td>${x.active ? `<button class="btn ghost small" type="button" data-gb-remove="${esc(x.id)}">Remove</button>` : ''}</td></tr>`).join('')}</tbody>
+            </table>` : '<p class="bulk-hint">No groups yet.</p>'}`;
+    }
+
+    async function loadGroupBot() {
+        try { renderGroupBot(await call('groupbot')); }
+        catch (err) { $('gb').innerHTML = `<p class="sg-err">The group bot couldn't load: ${esc(err.message)}</p>`; }
+    }
+
+    $('gb').addEventListener('click', async (e) => {
+        const copy = e.target.closest('button[data-gb-copy]');
+        if (copy) {
+            await navigator.clipboard.writeText(copy.dataset.gbCopy);
+            copy.innerHTML = `${icon('check')} Copied`;
+            setTimeout(() => { copy.innerHTML = `${icon('copy')} Copy add link`; }, 1500);
+            return;
+        }
+        const rm = e.target.closest('button[data-gb-remove]');
+        if (!rm || !confirm('Remove the bot from this group? It will leave the group and stop posting there.')) return;
+        rm.disabled = true;
+        try { renderGroupBot(await call('groupbot-remove', { id: rm.dataset.gbRemove })); }
+        catch (err) { note($('msg'), err.message); rm.disabled = false; }
+    });
 
     $('ag-run').addEventListener('click', async () => {
         busy($('ag-run'), true, 'The team is writing (about a minute)');

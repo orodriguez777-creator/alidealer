@@ -44,7 +44,8 @@ export const CHANNELS = {
     linkedin: { name: 'LinkedIn', auto: false, tag: 'li', max: 1100, style: 'LinkedIn post: practical angle (work from home, productivity, a smart buy), 3-5 lines, 2-3 hashtags, no silly tone' },
     reddit: { name: 'Reddit', auto: false, tag: 'rd', max: 1100, style: 'Reddit post: honest and low-key, no hype and no emoji; a title on the first line, then 2-3 plain sentences, and say openly that the link is an affiliate link' },
 };
-const TAGS = new Set(Object.values(CHANNELS).map(c => c.tag));
+// 'grp' = the deal bot in other people's groups (groupbot.mjs)
+const TAGS = new Set([...Object.values(CHANNELS).map(c => c.tag), 'grp']);
 
 // Telegram invite links, one per place people join from. Partners are added in the admin.
 const INVITE_SOURCES = { site: 'Website', fbgroups: 'Facebook groups', whatsapp: 'WhatsApp' };
@@ -1304,6 +1305,21 @@ export async function agencyAction(body) {
         }
     }
     return null;
+}
+
+// Deals posted to our own Telegram channel in the last few days, newest first, for the group bot
+export async function postedDeals(days) {
+    const since = Date.now() - days * 86400000;
+    return (await loadAgency()).drafts
+        .filter(d => d.status === 'posted' && d.productId && d.image && d.posts?.telegram && Date.parse(d.postedAt || d.slot) > since)
+        .sort((a, b) => Date.parse(b.postedAt || b.slot) - Date.parse(a.postedAt || a.slot))
+        .map(d => ({ productId: d.productId, image: d.image, posts: { telegram: d.posts.telegram } }));
+}
+
+// Site visits for one ?s= tag over the last N days
+export async function tagVisits(tag, days) {
+    const from = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
+    return Object.entries((await loadAgency()).visits[tag] || {}).reduce((n, [d, v]) => n + (d >= from ? v : 0), 0);
 }
 
 // Approved guides, for scripts/build-pages.mjs
