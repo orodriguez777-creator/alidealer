@@ -190,10 +190,13 @@ function crumbs(lang, items) {
         </nav>`;
 }
 
-function breadcrumbLd(items) {
+// Google needs a URL on every step: the page itself is the last one, and a step
+// without its own page (e.g. "Buying guide") is left out of the structured data
+function breadcrumbLd(items, path) {
+    const steps = items.map(([name, href], i) => [name, i === items.length - 1 ? path : href]).filter(([, href]) => href);
     return {
         '@context': 'https://schema.org', '@type': 'BreadcrumbList',
-        itemListElement: items.map(([name, href], i) => ({ '@type': 'ListItem', position: i + 1, name, ...(href && { item: ORIGIN + href }) })),
+        itemListElement: steps.map(([name, href], i) => ({ '@type': 'ListItem', position: i + 1, name, item: ORIGIN + href })),
     };
 }
 
@@ -253,7 +256,7 @@ ${related.length ? `
         lang, path, altPath: dealPath(p, lang === 'he' ? 'en' : 'he'), image: p.image, cats,
         title: t.dealTitle(name, price?.label),
         description: t.dealDesc(name, price?.label, cat),
-        jsonLd: [productLd, breadcrumbLd(trail)],
+        jsonLd: [productLd, breadcrumbLd(trail, path)],
         body,
     });
 }
@@ -274,7 +277,7 @@ function categoryPage(c, lang, items, cats) {
         lang, path, altPath: catPath(c, lang === 'he' ? 'en' : 'he'), image: items.find(p => p.image)?.image, cats,
         title: t.catTitle(cat),
         description: t.catDesc(items.length, cat),
-        jsonLd: [breadcrumbLd(trail), {
+        jsonLd: [breadcrumbLd(trail, path), {
             '@context': 'https://schema.org', '@type': 'ItemList',
             itemListElement: items.map((p, i) => ({ '@type': 'ListItem', position: i + 1, url: ORIGIN + dealPath(p, lang) })),
         }],
@@ -318,7 +321,7 @@ ${items.map(({ p, why, whyHe }, n) => {
         lang, path, altPath: guidePath(g, he ? 'en' : 'he'), image: items.find(i => i.p.image)?.p.image, cats,
         title: `${title} | www.Alidealer.com`,
         description: pick(g.description, g.descriptionHe),
-        jsonLd: [breadcrumbLd(trail), {
+        jsonLd: [breadcrumbLd(trail, path), {
             '@context': 'https://schema.org', '@type': 'Article', headline: title, inLanguage: lang,
             datePublished: g.createdAt, url: ORIGIN + path, publisher: { '@type': 'Organization', name: 'www.Alidealer.com' },
         }, {
@@ -449,7 +452,7 @@ ${pol.sections.map(([h, html]) => `            <h2>${h}</h2>\n            ${wrap
         lang, path, altPath: `${prefix(lang === 'he' ? 'en' : 'he')}/${slug}`, cats,
         title: `${pol.title} | www.Alidealer.com`,
         description: pol.intro.split('. ')[0] + '.',
-        jsonLd: [breadcrumbLd(trail)],
+        jsonLd: [breadcrumbLd(trail, path)],
         body,
     });
 }
