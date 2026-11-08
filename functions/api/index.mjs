@@ -27,8 +27,7 @@ const CLICK_EVENTS = 'clicks/events/';
 const SITE_URL = 'https://alidealer.com';
 const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
 const AI_MODEL = 'gemini-3.1-flash-lite-preview';
-const TRANSLATE_MODEL = 'gemini-3-flash-preview';
-
+const TRANSLATE_MODEL = 'gemini-3.1-flash-lite-preview';
 export const CATEGORIES = [
     'Electronics', 'Phone Accessories', 'Computers & Office', 'Home & Kitchen',
     'Tools & Home Improvement', 'Lighting', 'Women\'s Fashion', 'Men\'s Fashion',
