@@ -1,0 +1,32 @@
+name: Daily Telegram deals (3 a day)
+
+on:
+  schedule:
+    - cron: "0 7 * * *"    # 09:00 Israel (winter)
+    - cron: "0 11 * * *"   # 13:00
+    - cron: "0 17 * * *"   # 19:00
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: "Which of the day's 3 deals (0, 1 or 2). Leave empty to pick by time."
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Post one deal
+        run: node scripts/daily-post.mjs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          POST_LANG: he
+          SLOT: ${{ github.event.inputs.slot }}
