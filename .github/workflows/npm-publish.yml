@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 20
       - name: Post one deal
-        run: node scripts/scripts/daily-post.mjs.
+        run: node scripts/scripts/daily-post.mjs
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
